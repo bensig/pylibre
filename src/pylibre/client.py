@@ -134,3 +134,33 @@ class LibreClient:
                 return {"success": False, "error": str(e)}
                 
         return all_rows
+
+    def transfer(self, contract, from_account, to_account, quantity, memo=""):
+        """
+        Execute a transfer action on the blockchain.
+        
+        Example:
+            client.transfer("usdt.libre", "bentester", "bentest3", "0.00100000 USDT", "Test")
+        
+        Returns:
+            dict: {
+                "success": bool,
+                "transaction_id": str | None,
+                "error": str | None
+            }
+        """
+        try:
+            result = self.execute_action(
+                contract=contract,
+                action_name="transfer",
+                data={
+                    "from": from_account,
+                    "to": to_account,
+                    "quantity": quantity,
+                    "memo": memo
+                },
+                actor=from_account
+            )
+            return result  # Already in format {"success": bool, "transaction_id": str}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
