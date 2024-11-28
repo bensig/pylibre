@@ -36,21 +36,47 @@ cleos create wallet -n bentester -f bentester_wallet.pwd
 
 # Usage 
 
-For Python usage examples, see or run [examples.py](examples/examples.py) - of course you must change bentester to the account you have a key for...
+It does a few simple things - pretty easy to use - downloading an entire table, doing a transfer, or getting specific row data from a table using a filter "upper/lower bound"… 
 
-For CLI - see below:  
+###Transfer example: 
+```
+client.transfer("usdt.libre", "bentester", "bentest3", "0.00100000 USDT", "Test")
+```
 
-Get Balance
+### Download an entire table: 
+```
+client.get_table(
+    code="stake.libre",
+    table="stake",
+    scope="stake.libre"
+)
+```
+
+### Or just get a single row using the cli and filtering for an account:
+```
+pylibre --env-file .env.mainnet --contract farm.libre --action get_table \  --actor bentester --data '{"table":"account","scope":"BTCUSD","limit":1,"lower_bound":"cesarcv","upper_bound":"cesarcv","index_position":"primary","key_type":"name"}' | jq .
+```
+
+It still uses cleos for packing, signing, and broadcasting - but it's faster than EOSJS still by about 30-40% based on my testing. 
+
+
+## More Python Examples
+
+Check out or run [examples.py](examples/examples.py) - of course you must change bentester to the account you have a key for...
+
+## More CLI Examples 
+
+### Get Balance
 ```bash
 pylibre --contract btc.libre --action get_balance --actor bentester --symbol BTC --get-balance
 ```
 
-Transfer with unlock - requires a wallet password file for sender - ex: "bentester_wallet.pwd"
+### Transfer with unlock - requires a wallet password file for sender - ex: "bentester_wallet.pwd"
 ```bash
 pylibre --contract usdt.libre --action transfer --actor bentester --unlock --data '{"from":"bentester","to":"bentest3","quantity":"0.00100000 USDT","memo":"Test"}'
 ```
 
-Run an action on a contract with data
+### Run an action on a contract with data
 ```bash
 pylibre --contract reward.libre --action updateall --data '{"max_steps":"500"}' --actor bentester
 ```
