@@ -22,8 +22,8 @@ classifiers = [
     "Programming Language :: Python :: 3.9",
 ]
 dependencies = [
-    "python-dotenv",
-    "requests",
+    "python-dotenv>=1.0.0",
+    "requests>=2.26.0",
 ]
 
 [project.urls]
@@ -41,3 +41,17 @@ include = '\.pyi?$'
 [tool.isort]
 profile = "black"
 multi-line-output = 3
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "--strict-markers --tb=short"
+testpaths = [
+    "tests",
+]
+
+[tool.mypy]
+files = "src/pylibre"
+warn_unused_configs = true
+ignore_missing_imports = true
+strict_optional = true
+show_error_codes = true
