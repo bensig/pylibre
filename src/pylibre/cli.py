@@ -3,6 +3,7 @@ import json
 from dotenv import load_dotenv
 import argparse
 from .client import LibreClient
+import sys
 
 def create_parser():
     parser = argparse.ArgumentParser(
@@ -52,13 +53,31 @@ Examples:
     balance_parser.add_argument('symbol', help='Token symbol (e.g., USDT)')
 
     # Table command
-    table_parser = subparsers.add_parser('table', help='Get table rows')
-    table_parser.add_argument('contract', help='Contract account')
-    table_parser.add_argument('table', help='Table name')
-    table_parser.add_argument('scope', help='Table scope')
-    table_parser.add_argument('--limit', type=int, default=10, help='Number of rows to fetch')
-    table_parser.add_argument('--index-position', help='Index position for table queries')
-    table_parser.add_argument('--key-type', help='Key type for table queries')
+    table_parser = subparsers.add_parser('table', 
+        help='Query table data from smart contracts',
+        description="""
+        Query table data from smart contracts with optional filtering.
+        
+        Examples:
+          # Get all rows
+          pylibre table stake.libre stake stake.libre
+          
+          # Get filtered rows with pagination
+          pylibre table stake.libre stake stake.libre --limit 1 --lower-bound 1 --upper-bound 1
+          
+          # Get rows using secondary index
+          pylibre table farm.libre account BTCUSD --limit 1 --lower-bound cesarcv --upper-bound cesarcv --index-position primary --key-type name
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    table_parser.add_argument('contract', help='Contract account (e.g., farm.libre)')
+    table_parser.add_argument('table', help='Table name (e.g., account)')
+    table_parser.add_argument('scope', help='Table scope (e.g., BTCUSD)')
+    table_parser.add_argument('--limit', type=int, help='Number of rows to fetch')
+    table_parser.add_argument('--lower-bound', help='Lower bound for table query')
+    table_parser.add_argument('--upper-bound', help='Upper bound for table query')
+    table_parser.add_argument('--index-position', help='Index position for table queries (e.g., primary)')
+    table_parser.add_argument('--key-type', help='Key type for table queries (e.g., name)')
 
     # Table-all command
     table_all_parser = subparsers.add_parser('table-all', help='Get all table rows')
@@ -77,11 +96,11 @@ Examples:
 
     # Transfer command
     transfer_parser = subparsers.add_parser('transfer', help='Transfer tokens')
-    transfer_parser.add_argument('contract', help='Token contract')
     transfer_parser.add_argument('from_account', help='Sender account')
     transfer_parser.add_argument('to_account', help='Recipient account')
     transfer_parser.add_argument('quantity', help='Amount with symbol (e.g., "1.0000 USDT")')
     transfer_parser.add_argument('memo', nargs='?', default='', help='Transfer memo')
+    transfer_parser.add_argument('--contract', help='Token contract (optional for USDT, BTC, LIBRE)')
 
     return parser
 
@@ -130,71 +149,74 @@ Note: For testnet operations, use --api-url https://testnet.libre.org
       For mainnet operations, use --api-url https://lb.libre.org
 """)
 
-def main():
-    parser = create_parser()
-    args = parser.parse_args()
-
-    if not args.command:
-        parser.print_help()
-        return 1
-
-    # Load environment variables
-    load_dotenv(args.env_file)
+def transfer_command(args):
+    print("DEBUG - Transfer command args:", {
+        'from_account': args.from_account,
+        'to_account': args.to_account,
+        'quantity': args.quantity,
+        'memo': args.memo
+    })
+    
+    # Initialize client with API URL from args or environment
     api_url = args.api_url or os.getenv("API_URL")
     if not api_url:
         print("Error: API URL must be provided either through --api-url argument or API_URL environment variable")
         return 1
+        
+    client = LibreClient(api_url=api_url)
+    result = client.transfer(
+        from_account=args.from_account,
+        to_account=args.to_account,
+        quantity=args.quantity,
+        memo=args.memo if hasattr(args, 'memo') else "",
+        contract=args.contract if hasattr(args, 'contract') else None
+    )
+    print(json.dumps(result))
 
-    client = LibreClient(api_url)
-    client.load_account_keys(args.env_file)
+def table_command(args):
+    client = LibreClient(api_url=args.api_url)
+    result = client.get_table_rows(
+        code=args.contract,
+        table=args.table,
+        scope=args.scope,
+        limit=args.limit if args.limit else 10,
+        lower_bound=args.lower_bound if args.lower_bound else "",
+        upper_bound=args.upper_bound if args.upper_bound else "",
+        index_position=args.index_position if args.index_position else "",
+        key_type=args.key_type if args.key_type else ""
+    )
+    print(json.dumps(result))
 
-    if args.command == 'balance':
-        result = client.get_currency_balance(args.contract, args.account, args.symbol)
-        print(json.dumps(result))
-
-    elif args.command == 'table':
-        result = client.get_table_rows(
-            code=args.contract,
-            table=args.table,
-            scope=args.scope,
-            limit=args.limit,
-            index_position=args.index_position,
-            key_type=args.key_type
-        )
-        print(json.dumps(result))
-
-    elif args.command == 'table-all':
-        result = client.get_table(
-            code=args.contract,
-            table=args.table,
-            scope=args.scope,
-            index_position=args.index_position,
-            key_type=args.key_type
-        )
-        print(json.dumps(result))
-
-    elif args.command == 'execute':
-        if not unlock_wallet_if_needed(client, args, args.actor):
+def main():
+    try:
+        parser = create_parser()
+        args = parser.parse_args()
+        
+        # Load environment variables
+        load_dotenv(args.env_file)
+        
+        # Initialize client with API URL from args or environment
+        api_url = args.api_url or os.getenv("API_URL")
+        if not api_url:
+            print("Error: API URL must be provided either through --api-url argument or API_URL environment variable")
             return 1
-        result = client.execute_action(
-            contract=args.contract,
-            action_name=args.action,
-            data=json.loads(args.data),
-            actor=args.actor
-        )
-        print(json.dumps(result))
-
-    elif args.command == 'transfer':
-        if not unlock_wallet_if_needed(client, args, args.from_account):
-            return 1
-        result = client.transfer(
-            contract=args.contract,
-            from_account=args.from_account,
-            to_account=args.to_account,
-            quantity=args.quantity,
-            memo=args.memo
-        )
-        print(json.dumps(result))
+            
+        if args.command == 'table-all':
+            client = LibreClient(api_url=api_url)
+            result = client.get_table(
+                code=args.contract,
+                table=args.table,
+                scope=args.scope,
+                index_position=args.index_position if hasattr(args, 'index_position') else "",
+                key_type=args.key_type if hasattr(args, 'key_type') else ""
+            )
+            print(json.dumps(result))
+    except BrokenPipeError:
+        # Python flushes standard streams on exit; redirect remaining output
+        # to devnull to avoid another BrokenPipeError at shutdown
+        devnull = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(devnull, sys.stdout.fileno())
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

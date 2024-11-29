@@ -3,6 +3,7 @@ import json
 import subprocess
 from dotenv import load_dotenv
 import requests
+import sys
 
 class LibreClient:
     def __init__(self, api_url):
@@ -37,26 +38,29 @@ class LibreClient:
             "table": table,
             "scope": scope,
             "limit": limit,
-            "lower_bound": lower_bound,
-            "upper_bound": upper_bound,
+            "json": True,
             "reverse": reverse,
-            "json": True
+            "lower_bound": lower_bound,
+            "upper_bound": upper_bound
         }
         
-        # Only add index_position and key_type if they are provided
+        # Only add these parameters if they are provided with non-empty values
         if index_position:
             payload["index_position"] = index_position
         if key_type:
             payload["key_type"] = key_type
 
         try:
+            print("DEBUG - Table query payload:", json.dumps(payload, indent=2))  # Debug line
             response = requests.post(
                 f"{self.api_url}/v1/chain/get_table_rows",
                 json=payload,
                 headers={'Content-Type': 'application/json'}
             )
             response.raise_for_status()
-            return response.json().get("rows", [])
+            result = response.json()
+            print("DEBUG - API Response:", json.dumps(result, indent=2))  # Debug line
+            return result.get("rows", [])
         except requests.exceptions.RequestException as e:
             return {"success": False, "error": str(e)}
 
@@ -124,45 +128,70 @@ class LibreClient:
         all_rows = []
         more = True
         next_lower_bound = ""
+        total_rows = 0
         
-        while more:
-            try:
-                response = requests.post(
-                    f"{self.api_url}/v1/chain/get_table_rows",
-                    json={
-                        "code": code,
-                        "table": table,
-                        "scope": scope,
-                        "limit": 1000,  # Maximum limit per request
-                        "lower_bound": next_lower_bound,
-                        "upper_bound": "",
-                        "json": True,
-                        **({"index_position": index_position} if index_position else {}),
-                        **({"key_type": key_type} if key_type else {})
-                    }
-                )
-                response.raise_for_status()
-                result = response.json()
-                
-                all_rows.extend(result.get("rows", []))
-                more = result.get("more", False)
-                
-                if more:
-                    next_lower_bound = result.get("next_key")
-                    if not next_lower_bound:
-                        break  # Safety check in case next_key is not provided
+        try:
+            while more:
+                try:
+                    # Print progress to stderr
+                    print(f"\rFetching rows... (found {total_rows} so far)", 
+                          end="", flush=True, file=sys.stderr)
+                    
+                    response = requests.post(
+                        f"{self.api_url}/v1/chain/get_table_rows",
+                        json={
+                            "code": code,
+                            "table": table,
+                            "scope": scope,
+                            "limit": 1000,  # Maximum limit per request
+                            "lower_bound": next_lower_bound,
+                            "upper_bound": "",
+                            "json": True,
+                            **({"index_position": index_position} if index_position else {}),
+                            **({"key_type": key_type} if key_type else {})
+                        },
+                        timeout=10
+                    )
+                    response.raise_for_status()
+                    result = response.json()
+                    
+                    rows = result.get("rows", [])
+                    all_rows.extend(rows)
+                    total_rows += len(rows)
+                    
+                    more = result.get("more", False)
+                    if more:
+                        next_lower_bound = result.get("next_key")
+                        if not next_lower_bound:
+                            break
                         
-            except requests.exceptions.RequestException as e:
-                return {"success": False, "error": str(e)}
+                except requests.exceptions.RequestException as e:
+                    print(f"\nError fetching rows: {str(e)}", file=sys.stderr)
+                    return {"success": False, "error": str(e)}
                 
-        return all_rows
+            print(f"\nFetched {total_rows} rows total", file=sys.stderr)
+            return all_rows
+            
+        except KeyboardInterrupt:
+            print(f"\nFetch interrupted. Returning {total_rows} rows that were collected", 
+                  file=sys.stderr)
+            return all_rows
 
-    def transfer(self, contract, from_account, to_account, quantity, memo=""):
+    def transfer(self, from_account, to_account, quantity, memo="", contract=None):
         """
         Execute a transfer action on the blockchain.
         
-        Example:
-            client.transfer("usdt.libre", "bentester", "bentest3", "1.00000000 USDT", "Test")
+        Automatically handles common tokens:
+        - "BTC": 8 decimals, contract="btc.libre"
+        - "USDT": 8 decimals, contract="usdt.libre"
+        - "LIBRE": 4 decimals, contract="eosio.token"
+        
+        Args:
+            from_account (str): Sender account
+            to_account (str): Recipient account
+            quantity (str): Amount with symbol (e.g., "1.00000000 USDT")
+            memo (str): Transfer memo
+            contract (str, optional): Override the default contract for the token
         
         Returns:
             dict: {
@@ -172,6 +201,36 @@ class LibreClient:
             }
         """
         try:
+            # Parse quantity to get amount and symbol
+            parts = quantity.strip().split(' ')
+            if len(parts) != 2:
+                return {
+                    "success": False,
+                    "error": f"Invalid quantity format. Expected 'amount SYMBOL' but got: {quantity}"
+                }
+            
+            amount, symbol = parts
+            
+            # Define token specifications
+            TOKEN_SPECS = {
+                "BTC": {"contract": "btc.libre", "precision": 8},
+                "USDT": {"contract": "usdt.libre", "precision": 8},
+                "LIBRE": {"contract": "eosio.token", "precision": 4}
+            }
+            
+            # If no contract specified, try to determine from symbol
+            if contract is None:
+                if symbol in TOKEN_SPECS:
+                    contract = TOKEN_SPECS[symbol]["contract"]
+                    # Format amount to correct precision
+                    amount = f"{float(amount):.{TOKEN_SPECS[symbol]['precision']}f}"
+                    quantity = f"{amount} {symbol}"
+                else:
+                    return {
+                        "success": False,
+                        "error": f"No contract specified for token {symbol} and no default contract known."
+                    }
+            
             result = self.execute_action(
                 contract=contract,
                 action_name="transfer",
@@ -183,13 +242,6 @@ class LibreClient:
                 },
                 actor=from_account
             )
-            
-            # Check if error contains precision mismatch
-            if not result["success"] and "symbol precision mismatch" in str(result.get("error", "")):
-                return {
-                    "success": False, 
-                    "error": f"Invalid token precision in quantity '{quantity}'. Please check the correct precision for this token."
-                }
             
             return result
             
