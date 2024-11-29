@@ -61,24 +61,41 @@ class LibreClient:
             return {"success": False, "error": str(e)}
 
     def execute_action(self, contract, action_name, data, actor, permission="active"):
+        """Execute a contract action."""
         try:
-            process = subprocess.run(
-                ["cleos", "-u", self.api_url, "push", "action", contract, action_name, json.dumps(data),
-                "-p", f"{actor}@{permission}", "--json", "-x", "60"],
-                capture_output=True, text=True, check=False
-            )
-            if process.returncode != 0:
-                return {"success": False, "error": process.stderr.strip() or "Unknown error"}
-
-            # Attempt to parse JSON response
+            cmd = [
+                "cleos", "-u", self.api_url,
+                "push", "action", contract, action_name,
+                json.dumps(data),
+                "-p", f"{actor}@{permission}",
+                "--json",
+                "-x", "60"
+            ]
+            
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            return {"success": True, "transaction_id": None}
+            
+        except subprocess.CalledProcessError as e:
+            error_msg = e.stdout or e.stderr
+            
             try:
-                result = json.loads(process.stdout)
-                return {"success": True, "transaction_id": result.get("transaction_id")}
-            except json.JSONDecodeError:
-                return {"success": False, "error": f"Invalid JSON response: {process.stdout}"}
-        except Exception as e:
-            return {"success": False, "error": str(e)}
-    
+                error_data = json.loads(error_msg)
+                if "processed" in error_data:
+                    trace = error_data["processed"]["action_traces"][0]
+                    if "except" in trace:
+                        # Look for the error message in the stack trace
+                        if "stack" in trace["except"]:
+                            for stack_item in trace["except"]["stack"]:
+                                if "data" in stack_item and "s" in stack_item["data"]:
+                                    return {"success": False, "error": stack_item["data"]["s"]}
+                        # Fallback to message if no stack trace message found
+                        if "message" in trace["except"]:
+                            return {"success": False, "error": trace["except"]["message"]}
+            except:
+                pass
+            
+            return {"success": False, "error": error_msg or "Unknown error occurred"}
+
     def unlock_wallet(self, wallet_name, wallet_password_file):
         """Unlock a wallet using its password file."""
         try:
@@ -140,7 +157,7 @@ class LibreClient:
         Execute a transfer action on the blockchain.
         
         Example:
-            client.transfer("usdt.libre", "bentester", "bentest3", "0.00100000 USDT", "Test")
+            client.transfer("usdt.libre", "bentester", "bentest3", "1.00000000 USDT", "Test")
         
         Returns:
             dict: {
@@ -161,6 +178,15 @@ class LibreClient:
                 },
                 actor=from_account
             )
-            return result  # Already in format {"success": bool, "transaction_id": str}
+            
+            # Check if error contains precision mismatch
+            if not result["success"] and "symbol precision mismatch" in str(result.get("error", "")):
+                return {
+                    "success": False, 
+                    "error": f"Invalid token precision in quantity '{quantity}'. Please check the correct precision for this token."
+                }
+            
+            return result
+            
         except Exception as e:
             return {"success": False, "error": str(e)}

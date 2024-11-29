@@ -40,6 +40,8 @@ Examples:
                        help='Environment file path (default: .env.testnet)')
     parser.add_argument('--api-url', 
                        help='API URL (e.g., https://testnet.libre.org) - overrides API_URL from env file')
+    parser.add_argument('--unlock', action='store_true',
+                       help='Unlock wallet for the account (requires password file in .env)')
 
     subparsers = parser.add_subparsers(dest='command', help='Available commands')
 
@@ -82,6 +84,51 @@ Examples:
     transfer_parser.add_argument('memo', nargs='?', default='', help='Transfer memo')
 
     return parser
+
+def unlock_wallet_if_needed(client, args, account):
+    """Helper function to unlock wallet if needed"""
+    if args.unlock:
+        result = client.unlock_wallet(account, f"{account}_wallet.pwd")
+        if not result.get('success'):
+            print(f"Error unlocking wallet: {result.get('error')}")
+            return False
+    return True
+
+def print_usage():
+    """Print usage information for the PyLibre CLI tool."""
+    print("""PyLibre CLI - Interact with Libre blockchain
+
+Usage:
+    pylibre [--api-url URL] <command> [<args>...]
+
+Commands:
+    balance <contract> <account> <symbol>
+        Get token balance
+        Example: pylibre balance usdt.libre bentester USDT
+
+    table <contract> <table> <scope> [--index <pos>] [--key-type <type>]
+        Get table rows (paginated)
+        Example: pylibre table stake.libre stake stake.libre
+
+    table-all <contract> <table> <scope> [--index <pos>] [--key-type <type>]
+        Get all table rows
+        Example: pylibre table-all stake.libre stake stake.libre
+
+    transfer <contract> <from> <to> <quantity> [memo]
+        Transfer tokens
+        Example: pylibre transfer usdt.libre bentester bentest3 "1.00000000 USDT" "memo"
+
+    execute <contract> <action> <actor> <data>
+        Execute contract action
+        Example: pylibre execute reward.libre updateall bentester '{"max_steps":"500"}'
+
+Options:
+    --api-url URL    API endpoint URL [default: https://testnet.libre.org]
+    --help          Show this help message
+
+Note: For testnet operations, use --api-url https://testnet.libre.org
+      For mainnet operations, use --api-url https://lb.libre.org
+""")
 
 def main():
     parser = create_parser()
@@ -127,6 +174,8 @@ def main():
         print(json.dumps(result))
 
     elif args.command == 'execute':
+        if not unlock_wallet_if_needed(client, args, args.actor):
+            return 1
         result = client.execute_action(
             contract=args.contract,
             action_name=args.action,
@@ -136,6 +185,8 @@ def main():
         print(json.dumps(result))
 
     elif args.command == 'transfer':
+        if not unlock_wallet_if_needed(client, args, args.from_account):
+            return 1
         result = client.transfer(
             contract=args.contract,
             from_account=args.from_account,
