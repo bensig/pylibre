@@ -22,8 +22,23 @@ initial_balance = client.get_currency_balance(
 )[0]
 print("Initial Balance:", initial_balance)
 
-print("\n💸 Transferring 0.001 USDT from bentester to bentest3")
-result = client.transfer("usdt.libre", "bentester", "bentest3", "0.00100000 USDT", "Test")
+print("\n💸 Transferring 0.001 USDT from bentester to bentest3 (with explicit contract)")
+result = client.transfer(
+    contract="usdt.libre",
+    from_account="bentester",
+    to_account="bentest3",
+    quantity="0.00100000 USDT",
+    memo="Test"
+)
+print("Transfer result:", json.dumps(result, indent=2))
+
+print("\n💸 Transferring 0.001 USDT from bentester to bentest3 (auto-detecting contract)")
+result = client.transfer(
+    from_account="bentester",
+    to_account="bentest3",
+    quantity="0.00100000 USDT",  # Contract will be determined from "USDT"
+    memo="Test"
+)
 print("Transfer result:", json.dumps(result, indent=2))
 
 print("\n💰 Getting balance again for bentester - should be less by 0.001 USDT")
@@ -43,7 +58,7 @@ final_amount = float(final_balance.split()[0])
 difference = initial_amount - final_amount
 
 print(f"\n🔍 Balance difference: {difference:.8f} USDT")
-if abs(difference - 0.001) < 0.00000001:
+if abs(difference - 0.002) < 0.00000001:
     print("✅ Transfer amount verified correctly")
 else:
     print("❌ Unexpected balance difference")
@@ -83,3 +98,18 @@ print("All entries:", json.dumps(stake_data_limited, indent=2))
 print("\n" + "="*50)
 print("Single row test successful:", "✅" if len(stake_data_single) == 1 else "❌")
 print("Difference confirmed:", "✅ More rows retrieved with get_table" if len(stake_data_all) > len(stake_data_limited) else "❌ Unexpected result")
+
+print("\n" + "="*50)
+print("🔄 Contract Action Execution")
+print("="*50)
+
+print("\n📝 Executing updateall action on reward.libre contract:")
+action_result = client.execute_action(
+    contract="reward.libre",
+    action_name="updateall",
+    actor="bentester",
+    data={
+        "max_steps": "500"
+    }
+)
+print("Action result:", json.dumps(action_result, indent=2))

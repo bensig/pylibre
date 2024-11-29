@@ -8,7 +8,28 @@ A Python client for interacting with the Libre blockchain.
 pip install pylibre
 ```
 
-## Usage
+# Environment Setup
+
+Create a `.env.testnet` or `.env.mainnet` file:
+```bash
+# For testnet
+API_URL=https://testnet.libre.org
+
+# For mainnet
+# API_URL=https://lb.libre.org
+```
+
+For transactions requiring authorization, create a wallet password file:
+```bash
+# Create wallet and save password
+cleos wallet create -n myaccount -f myaccount_wallet.pwd
+```
+
+# Usage:
+
+Import a client object into python or use the cli from the command line.
+
+To see examples of how to use the cli, see the examples directory - [examples.py](examples/examples.py).
 
 ### Global Options
 - `--api-url`: API endpoint URL (required)
@@ -16,6 +37,21 @@ pip install pylibre
   - Mainnet: `https://lb.libre.org`
 - `--env-file`: Environment file path (default: .env.testnet)
 - `--unlock`: Unlock wallet for transactions (requires password file)
+
+## Commands
+
+- table: Query table data from smart contracts
+- table-all: Get all rows from a table
+- transfer: Transfer tokens
+- execute: Execute contract actions
+
+## CLI command structure:
+
+```bash
+pylibre global-options command command-options
+```
+
+## Example commands for cli:
 
 ### Query Table Data
 ```bash
@@ -43,23 +79,6 @@ pylibre --api-url https://testnet.libre.org --unlock transfer usdt.libre sender 
 ### Execute Contract Actions
 ```bash
 pylibre --api-url https://testnet.libre.org execute reward.libre updateall myaccount '{"max_steps":"500"}'
-```
-
-## Environment Setup
-
-Create a `.env.testnet` or `.env.mainnet` file:
-```bash
-# For testnet
-API_URL=https://testnet.libre.org
-
-# For mainnet
-# API_URL=https://lb.libre.org
-```
-
-For transactions requiring authorization, create a wallet password file:
-```bash
-# Create wallet and save password
-cleos wallet create -n myaccount -f myaccount_wallet.pwd
 ```
 
 ## Common Token Contracts
