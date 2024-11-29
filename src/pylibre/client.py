@@ -73,7 +73,14 @@ class LibreClient:
             ]
             
             result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-            return {"success": True, "transaction_id": None}
+            try:
+                response = json.loads(result.stdout)
+                return {
+                    "success": True, 
+                    "transaction_id": response.get("transaction_id")
+                }
+            except:
+                return {"success": True, "transaction_id": None}
             
         except subprocess.CalledProcessError as e:
             error_msg = e.stdout or e.stderr
@@ -83,12 +90,10 @@ class LibreClient:
                 if "processed" in error_data:
                     trace = error_data["processed"]["action_traces"][0]
                     if "except" in trace:
-                        # Look for the error message in the stack trace
                         if "stack" in trace["except"]:
                             for stack_item in trace["except"]["stack"]:
                                 if "data" in stack_item and "s" in stack_item["data"]:
                                     return {"success": False, "error": stack_item["data"]["s"]}
-                        # Fallback to message if no stack trace message found
                         if "message" in trace["except"]:
                             return {"success": False, "error": trace["except"]["message"]}
             except:

@@ -1,5 +1,6 @@
 from pylibre import LibreClient
 import json
+import time
 
 # Initialize client
 client = LibreClient("https://testnet.libre.org")
@@ -26,6 +27,9 @@ result = client.transfer("usdt.libre", "bentester", "bentest3", "0.00100000 USDT
 print("Transfer result:", json.dumps(result, indent=2))
 
 print("\n💰 Getting balance again for bentester - should be less by 0.001 USDT")
+print("Waiting 1 seconds for transaction to process...")
+time.sleep(1)
+
 final_balance = client.get_currency_balance(
     contract="usdt.libre",
     account="bentester",
@@ -48,7 +52,17 @@ print("\n" + "="*50)
 print("📋 Stake Table Comparison")
 print("="*50)
 
-print("\n1. 📊 Using get_table (should get ALL rows):")
+print("\n1. 📊 Testing get_table_rows with limit=1:")
+stake_data_single = client.get_table_rows(
+    code="stake.libre",
+    table="stake",
+    scope="stake.libre",
+    limit=1
+)
+print(f"\nSingle row test - rows retrieved: {len(stake_data_single)}")
+print("Single entry:", json.dumps(stake_data_single, indent=2))
+
+print("\n2. 📊 Using get_table (getting ALL rows):")
 stake_data_all = client.get_table(
     code="stake.libre",
     table="stake",
@@ -57,7 +71,7 @@ stake_data_all = client.get_table(
 print(f"\nTotal rows retrieved: {len(stake_data_all)}")
 print("First few entries:", json.dumps(stake_data_all[:3], indent=2))
 
-print("\n2. 📑 Using get_table_rows (limited to 10 rows by default):")
+print("\n3. 📑 Using get_table_rows (limited to 10 rows by default):")
 stake_data_limited = client.get_table_rows(
     code="stake.libre",
     table="stake",
@@ -67,4 +81,5 @@ print(f"\nTotal rows retrieved: {len(stake_data_limited)}")
 print("All entries:", json.dumps(stake_data_limited, indent=2))
 
 print("\n" + "="*50)
+print("Single row test successful:", "✅" if len(stake_data_single) == 1 else "❌")
 print("Difference confirmed:", "✅ More rows retrieved with get_table" if len(stake_data_all) > len(stake_data_limited) else "❌ Unexpected result")
