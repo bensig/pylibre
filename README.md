@@ -56,7 +56,7 @@ pylibre global-options command command-options
 ### Query Table Data
 ```bash
 # Get filtered rows from a table
-pylibre --api-url https://testnet.libre.org table farm.libre account BTCUSD --lower-bound cesarcv --upper-bound cesarcv
+pylibre --api-url https://lb.libre.org table farm.libre account BTCUSD --lower-bound cesarcv --upper-bound cesarcv
 
 # Get all rows from a table
 pylibre --api-url https://testnet.libre.org table-all stake.libre stake stake.libre
@@ -64,21 +64,24 @@ pylibre --api-url https://testnet.libre.org table-all stake.libre stake stake.li
 
 ### Get Token Balance
 ```bash
-pylibre --api-url https://testnet.libre.org balance usdt.libre myaccount USDT
+pylibre --api-url https://testnet.libre.org balance usdt.libre bentester USDT
 ```
 
 ### Transfer Tokens
-```bash
 # Simple transfer (contract from_account to_account quantity memo)
-pylibre --api-url https://testnet.libre.org transfer usdt.libre sender recipient "1.00000000 USDT" "memo"
 
-# Transfer with wallet unlock
-pylibre --api-url https://testnet.libre.org --unlock transfer usdt.libre sender recipient "1.00000000 USDT" "memo"
+```bash
+pylibre --api-url https://testnet.libre.org transfer bentester bentest3 "1.00000000 USDT" "memo"
+```
+
+# Transfer with wallet unlock and specify contract
+```bash
+pylibre --api-url https://testnet.libre.org --unlock transfer usdt.libre bentester bentest3 "1.00000000 USDT" "memo"
 ```
 
 ### Execute Contract Actions
 ```bash
-pylibre --api-url https://testnet.libre.org execute reward.libre updateall myaccount '{"max_steps":"500"}'
+pylibre --api-url https://testnet.libre.org execute reward.libre updateall bentester '{"max_steps":"500"}'
 ```
 
 ## Common Token Contracts

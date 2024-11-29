@@ -25,8 +25,11 @@ Examples:
     # Execute contract action
     pylibre --api-url https://lb.libre.org execute reward.libre updateall bentester '{"max_steps":"500"}'
     
-    # Transfer tokens (with optional wallet unlock)
-    pylibre --api-url https://lb.libre.org --unlock transfer usdt.libre bentester bentest2 "1.0000 USDT" "Test transfer"
+    # Transfer tokens (auto-detecting contract)
+    pylibre --api-url https://lb.libre.org transfer bentester bentest3 "1.00000000 USDT" "memo"
+    
+    # Transfer tokens (with explicit contract)
+    pylibre --api-url https://testnet.libre.org transfer --contract usdt.libre bentester bentest3 "1.00000000 USDT" "memo"
 
 Note: 
     For testnet operations: --api-url https://testnet.libre.org
@@ -93,12 +96,28 @@ Note:
     execute_parser.add_argument('data', help='Action data as JSON string')
 
     # Transfer command
-    transfer_parser = subparsers.add_parser('transfer', help='Transfer tokens')
-    transfer_parser.add_argument('--contract', help='Token contract (optional for USDT/BTC/LIBRE)')
+    transfer_parser = subparsers.add_parser('transfer', 
+        help='Transfer tokens',
+        description="""
+        Transfer tokens between accounts. Contract is optional for common tokens:
+        - USDT: usdt.libre (8 decimals)
+        - BTC: btc.libre (8 decimals)
+        - LIBRE: eosio.token (4 decimals)
+        
+        Examples:
+          # Transfer with auto-detected contract
+          pylibre transfer bentester bentest3 "1.00000000 USDT" "memo"
+          
+          # Transfer with explicit contract
+          pylibre transfer --contract usdt.libre bentester bentest3 "1.00000000 USDT" "memo"
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     transfer_parser.add_argument('from_account', help='Sender account')
     transfer_parser.add_argument('to_account', help='Recipient account')
     transfer_parser.add_argument('quantity', help='Amount with symbol (e.g., "1.00000000 USDT")')
     transfer_parser.add_argument('memo', help='Transfer memo')
+    transfer_parser.add_argument('--contract', help='Token contract (optional for USDT/BTC/LIBRE)')
 
     return parser
 
@@ -198,22 +217,11 @@ def main():
                 from_account=args.from_account,
                 to_account=args.to_account,
                 quantity=args.quantity,
-                memo=args.memo if hasattr(args, 'memo') else "",
-                contract=args.contract if hasattr(args, 'contract') else None
+                memo=args.memo,
+                contract=args.contract  # Will be None if not specified
             )
             
-            if isinstance(result, dict) and not result.get('success'):
-                error = result.get('error')
-                if isinstance(error, str):
-                    try:
-                        error_obj = json.loads(error)
-                        print(json.dumps(error_obj, indent=2))
-                    except:
-                        print(error)
-                else:
-                    print(error)
-            else:
-                print(json.dumps(result))
+            print(json.dumps(result, indent=2))
             
         elif args.command == 'balance':
             result = client.get_currency_balance(

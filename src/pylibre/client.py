@@ -253,10 +253,8 @@ class LibreClient:
             # Parse quantity to get amount and symbol
             parts = quantity.strip().split(' ')
             if len(parts) != 2:
-                return {
-                    "success": False,
-                    "error": f"Invalid quantity format. Expected 'amount SYMBOL' but got: {quantity}"
-                }
+                return self.format_response(False, 
+                    error=f"Invalid quantity format. Expected 'amount SYMBOL' but got: {quantity}")
             
             amount, symbol = parts
             
@@ -268,19 +266,17 @@ class LibreClient:
             }
             
             # If no contract specified, try to determine from symbol
-            if contract is None:
-                if symbol in TOKEN_SPECS:
-                    contract = TOKEN_SPECS[symbol]["contract"]
-                    # Format amount to correct precision
-                    amount = f"{float(amount):.{TOKEN_SPECS[symbol]['precision']}f}"
-                    quantity = f"{amount} {symbol}"
-                else:
-                    return {
-                        "success": False,
-                        "error": f"No contract specified for token {symbol} and no default contract known."
-                    }
+            if contract is None and symbol in TOKEN_SPECS:
+                contract = TOKEN_SPECS[symbol]["contract"]
+                # Format amount to correct precision
+                amount = f"{float(amount):.{TOKEN_SPECS[symbol]['precision']}f}"
+                quantity = f"{amount} {symbol}"
+            elif contract is None:
+                return self.format_response(False, 
+                    error=f"No contract specified for token {symbol} and no default contract known.")
             
-            result = self.execute_action(
+            # Execute the transfer
+            return self.execute_action(
                 contract=contract,
                 action_name="transfer",
                 data={
@@ -292,7 +288,5 @@ class LibreClient:
                 actor=from_account
             )
             
-            return result
-            
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            return self.format_response(False, error=str(e))
