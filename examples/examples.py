@@ -19,7 +19,7 @@ initial_balance = client.get_currency_balance(
     contract="usdt.libre",
     account="bentester",
     symbol="USDT"
-)[0]
+)
 print("Initial Balance:", initial_balance)
 
 print("\n💸 Transferring 0.001 USDT from bentester to bentest3 (with explicit contract)")
@@ -49,7 +49,7 @@ final_balance = client.get_currency_balance(
     contract="usdt.libre",
     account="bentester",
     symbol="USDT"
-)[0]
+)
 print("Final Balance:", final_balance)
 
 # Convert balances to float and compare

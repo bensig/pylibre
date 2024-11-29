@@ -94,7 +94,7 @@ Note:
 
     # Transfer command
     transfer_parser = subparsers.add_parser('transfer', help='Transfer tokens')
-    transfer_parser.add_argument('contract', help='Token contract (e.g., usdt.libre)')
+    transfer_parser.add_argument('--contract', help='Token contract (optional for USDT/BTC/LIBRE)')
     transfer_parser.add_argument('from_account', help='Sender account')
     transfer_parser.add_argument('to_account', help='Recipient account')
     transfer_parser.add_argument('quantity', help='Amount with symbol (e.g., "1.00000000 USDT")')
@@ -191,6 +191,9 @@ def main():
             print(json.dumps(result))
             
         elif args.command == 'transfer':
+            if args.unlock and not unlock_wallet_if_needed(client, args, args.from_account):
+                return 1
+                
             result = client.transfer(
                 from_account=args.from_account,
                 to_account=args.to_account,
@@ -198,7 +201,19 @@ def main():
                 memo=args.memo if hasattr(args, 'memo') else "",
                 contract=args.contract if hasattr(args, 'contract') else None
             )
-            print(json.dumps(result))
+            
+            if isinstance(result, dict) and not result.get('success'):
+                error = result.get('error')
+                if isinstance(error, str):
+                    try:
+                        error_obj = json.loads(error)
+                        print(json.dumps(error_obj, indent=2))
+                    except:
+                        print(error)
+                else:
+                    print(error)
+            else:
+                print(json.dumps(result))
             
         elif args.command == 'balance':
             result = client.get_currency_balance(
@@ -209,7 +224,6 @@ def main():
             print(json.dumps(result))
             
         elif args.command == 'execute':
-            # Check if wallet needs to be unlocked
             if args.unlock and not unlock_wallet_if_needed(client, args, args.actor):
                 return 1
                 

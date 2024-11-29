@@ -5,6 +5,41 @@ from dotenv import load_dotenv
 import requests
 import sys
 
+def extract_error_message(error_json):
+    """Extract the relevant error message from a JSON error response"""
+    try:
+        # Handle blockchain error responses
+        if isinstance(error_json, dict):
+            # Check for processed transaction errors
+            processed = error_json.get('processed', {})
+            except_data = processed.get('except', {})
+            stack = except_data.get('stack', [])
+            
+            if stack and isinstance(stack, list):
+                for item in stack:
+                    if item.get('context', {}).get('level') == 'error':
+                        return item.get('data', {}).get('s')
+            
+            # Check for action trace errors
+            traces = processed.get('action_traces', [])
+            if traces:
+                for trace in traces:
+                    if 'except' in trace:
+                        if 'stack' in trace['except']:
+                            for stack_item in trace['except']['stack']:
+                                if 'data' in stack_item and 's' in stack_item['data']:
+                                    return stack_item['data']['s']
+                        if 'message' in trace['except']:
+                            return trace['except']['message']
+            
+            # Check for simple error message
+            if 'message' in error_json:
+                return error_json['message']
+            
+        return str(error_json)
+    except:
+        return str(error_json)
+
 class LibreClient:
     def __init__(self, api_url):
         self.api_url = api_url
@@ -18,6 +53,22 @@ class LibreClient:
             for key in os.environ if key.startswith("ACCOUNT_")
         }
 
+    def format_response(self, success, data=None, error=None):
+        """Standardize response format across all methods"""
+        response = {"success": success}
+        if success and data is not None:
+            response["data"] = data
+        if not success and error is not None:
+            if isinstance(error, str):
+                try:
+                    error_obj = json.loads(error)
+                    response["error"] = extract_error_message(error_obj)
+                except:
+                    response["error"] = error
+            else:
+                response["error"] = str(error)
+        return response
+
     def get_currency_balance(self, contract, account, symbol):
         """Fetch token balance for an account."""
         try:
@@ -26,9 +77,21 @@ class LibreClient:
                 json={"code": contract, "account": account, "symbol": symbol}
             )
             response.raise_for_status()
-            return response.json()
+            balances = response.json()
+            
+            # API returns a list of balances
+            if not isinstance(balances, list):
+                return self.format_response(False, error="Unexpected response format from API")
+            
+            # If no balance found, return 0
+            if len(balances) == 0:
+                return f"0.00000000 {symbol}"
+            
+            # Return the first matching balance directly
+            return balances[0]
+            
         except requests.exceptions.RequestException as e:
-            return {"success": False, "error": str(e)}
+            raise Exception(f"Failed to get balance: {str(e)}")
 
     def get_table_rows(self, code, table, scope, limit=10, lower_bound="", upper_bound="", 
                       index_position="", key_type="", reverse=False):
@@ -44,14 +107,12 @@ class LibreClient:
             "upper_bound": upper_bound
         }
         
-        # Only add these parameters if they are provided with non-empty values
         if index_position:
             payload["index_position"] = index_position
         if key_type:
             payload["key_type"] = key_type
 
         try:
-            print("DEBUG - Table query payload:", json.dumps(payload, indent=2))  # Debug line
             response = requests.post(
                 f"{self.api_url}/v1/chain/get_table_rows",
                 json=payload,
@@ -59,10 +120,9 @@ class LibreClient:
             )
             response.raise_for_status()
             result = response.json()
-            print("DEBUG - API Response:", json.dumps(result, indent=2))  # Debug line
-            return result.get("rows", [])
+            return result.get("rows", [])  # Return rows directly
         except requests.exceptions.RequestException as e:
-            return {"success": False, "error": str(e)}
+            raise Exception(f"Failed to get table rows: {str(e)}")
 
     def execute_action(self, contract, action_name, data, actor, permission="active"):
         """Execute a contract action."""
@@ -79,49 +139,39 @@ class LibreClient:
             result = subprocess.run(cmd, capture_output=True, text=True, check=True)
             try:
                 response = json.loads(result.stdout)
-                return {
-                    "success": True, 
+                return self.format_response(True, data={
                     "transaction_id": response.get("transaction_id")
-                }
+                })
             except:
-                return {"success": True, "transaction_id": None}
+                return self.format_response(True)
             
         except subprocess.CalledProcessError as e:
-            error_msg = e.stdout or e.stderr
-            
-            try:
-                error_data = json.loads(error_msg)
-                if "processed" in error_data:
-                    trace = error_data["processed"]["action_traces"][0]
-                    if "except" in trace:
-                        if "stack" in trace["except"]:
-                            for stack_item in trace["except"]["stack"]:
-                                if "data" in stack_item and "s" in stack_item["data"]:
-                                    return {"success": False, "error": stack_item["data"]["s"]}
-                        if "message" in trace["except"]:
-                            return {"success": False, "error": trace["except"]["message"]}
-            except:
-                pass
-            
-            return {"success": False, "error": error_msg or "Unknown error occurred"}
+            return self.format_response(False, error=e.stdout or e.stderr)
 
     def unlock_wallet(self, wallet_name, wallet_password_file):
         """Unlock a wallet using its password file."""
         try:
             # Open wallet first
+            print(f"DEBUG: Opening wallet {wallet_name}")  # Debug line
             subprocess.run(["cleos", "wallet", "open", "-n", wallet_name], check=True)
+            
             # Unlock wallet
+            print(f"DEBUG: Reading password from {wallet_password_file}")  # Debug line
             with open(wallet_password_file, "r") as f:
                 password = f.read().strip()
-            subprocess.run(
-                ["cleos", "wallet", "unlock", "-n", wallet_name, "--password", password],
-                check=True
-            )
-            return {"success": True}
+            print(f"DEBUG: Attempting to unlock with password length: {len(password)}")  # Debug line
+            
+            unlock_cmd = ["cleos", "wallet", "unlock", "-n", wallet_name, "--password", password]
+            print(f"DEBUG: Running command: {' '.join(unlock_cmd)}")  # Debug line
+            
+            result = subprocess.run(unlock_cmd, capture_output=True, text=True, check=True)
+            print(f"DEBUG: Unlock result: {result.stdout}")  # Debug line
+            
+            return self.format_response(True)
         except FileNotFoundError:
-            return {"success": False, "error": f"Wallet password file not found: {wallet_password_file}"}
+            return self.format_response(False, error=f"Wallet password file not found: {wallet_password_file}")
         except subprocess.CalledProcessError as e:
-            return {"success": False, "error": e.stderr.strip()}
+            return self.format_response(False, error=e.stderr.strip())
 
     def get_table(self, code, table, scope, index_position="", key_type=""):
         """Fetch all rows from a smart contract table by paginating through it."""
@@ -133,7 +183,6 @@ class LibreClient:
         try:
             while more:
                 try:
-                    # Print progress to stderr
                     print(f"\rFetching rows... (found {total_rows} so far)", 
                           end="", flush=True, file=sys.stderr)
                     
@@ -143,7 +192,7 @@ class LibreClient:
                             "code": code,
                             "table": table,
                             "scope": scope,
-                            "limit": 1000,  # Maximum limit per request
+                            "limit": 1000,
                             "lower_bound": next_lower_bound,
                             "upper_bound": "",
                             "json": True,
@@ -167,10 +216,10 @@ class LibreClient:
                         
                 except requests.exceptions.RequestException as e:
                     print(f"\nError fetching rows: {str(e)}", file=sys.stderr)
-                    return {"success": False, "error": str(e)}
+                    raise Exception(f"Failed to get table: {str(e)}")
                 
             print(f"\nFetched {total_rows} rows total", file=sys.stderr)
-            return all_rows
+            return all_rows  # Return rows directly
             
         except KeyboardInterrupt:
             print(f"\nFetch interrupted. Returning {total_rows} rows that were collected", 
