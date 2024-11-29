@@ -11,28 +11,26 @@ def create_parser():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-    # Global options (--api-url, --env-file) must come BEFORE the command:
-    pylibre --api-url https://testnet.libre.org --env-file .env.custom balance usdt.libre bentester USDT
-
-    # Command-specific options come AFTER the command:
-    pylibre --api-url https://testnet.libre.org table reward.libre rewards bentester --limit 10
-
-    # Available commands:
+    # Global options (--api-url, --env-file) must come BEFORE the command
     
     # Get token balance
-    pylibre balance usdt.libre bentester USDT
-
-    # Get table data (with pagination)
-    pylibre table reward.libre rewards bentester --limit 10
-
-    # Get all table data
-    pylibre table-all reward.libre rewards bentester
-
+    pylibre --api-url https://lb.libre.org balance usdt.libre bentester USDT
+    
+    # Get table data with filtering
+    pylibre --api-url https://lb.libre.org table farm.libre account BTCUSD --lower-bound cesarcv --upper-bound cesarcv
+    
+    # Get all rows from a table
+    pylibre --api-url https://lb.libre.org table-all stake.libre stake stake.libre
+    
     # Execute contract action
-    pylibre execute reward.libre updateall bentester '{"max_steps":"500"}'
+    pylibre --api-url https://lb.libre.org execute reward.libre updateall bentester '{"max_steps":"500"}'
+    
+    # Transfer tokens (with optional wallet unlock)
+    pylibre --api-url https://lb.libre.org --unlock transfer usdt.libre bentester bentest2 "1.0000 USDT" "Test transfer"
 
-    # Transfer tokens
-    pylibre transfer usdt.libre bentester bentest2 "1.0000 USDT" "memo"
+Note: 
+    For testnet operations: --api-url https://testnet.libre.org
+    For mainnet operations: --api-url https://lb.libre.org
     """
     )
 
@@ -96,11 +94,11 @@ Examples:
 
     # Transfer command
     transfer_parser = subparsers.add_parser('transfer', help='Transfer tokens')
+    transfer_parser.add_argument('contract', help='Token contract (e.g., usdt.libre)')
     transfer_parser.add_argument('from_account', help='Sender account')
     transfer_parser.add_argument('to_account', help='Recipient account')
-    transfer_parser.add_argument('quantity', help='Amount with symbol (e.g., "1.0000 USDT")')
-    transfer_parser.add_argument('memo', nargs='?', default='', help='Transfer memo')
-    transfer_parser.add_argument('--contract', help='Token contract (optional for USDT, BTC, LIBRE)')
+    transfer_parser.add_argument('quantity', help='Amount with symbol (e.g., "1.00000000 USDT")')
+    transfer_parser.add_argument('memo', help='Transfer memo')
 
     return parser
 
@@ -149,44 +147,6 @@ Note: For testnet operations, use --api-url https://testnet.libre.org
       For mainnet operations, use --api-url https://lb.libre.org
 """)
 
-def transfer_command(args):
-    print("DEBUG - Transfer command args:", {
-        'from_account': args.from_account,
-        'to_account': args.to_account,
-        'quantity': args.quantity,
-        'memo': args.memo
-    })
-    
-    # Initialize client with API URL from args or environment
-    api_url = args.api_url or os.getenv("API_URL")
-    if not api_url:
-        print("Error: API URL must be provided either through --api-url argument or API_URL environment variable")
-        return 1
-        
-    client = LibreClient(api_url=api_url)
-    result = client.transfer(
-        from_account=args.from_account,
-        to_account=args.to_account,
-        quantity=args.quantity,
-        memo=args.memo if hasattr(args, 'memo') else "",
-        contract=args.contract if hasattr(args, 'contract') else None
-    )
-    print(json.dumps(result))
-
-def table_command(args):
-    client = LibreClient(api_url=args.api_url)
-    result = client.get_table_rows(
-        code=args.contract,
-        table=args.table,
-        scope=args.scope,
-        limit=args.limit if args.limit else 10,
-        lower_bound=args.lower_bound if args.lower_bound else "",
-        upper_bound=args.upper_bound if args.upper_bound else "",
-        index_position=args.index_position if args.index_position else "",
-        key_type=args.key_type if args.key_type else ""
-    )
-    print(json.dumps(result))
-
 def main():
     try:
         parser = create_parser()
@@ -198,11 +158,29 @@ def main():
         # Initialize client with API URL from args or environment
         api_url = args.api_url or os.getenv("API_URL")
         if not api_url:
-            print("Error: API URL must be provided either through --api-url argument or API_URL environment variable")
+            print(json.dumps({
+                "success": False,
+                "error": "API URL must be provided either through --api-url argument or API_URL environment variable"
+            }))
             return 1
             
-        if args.command == 'table-all':
-            client = LibreClient(api_url=api_url)
+        client = LibreClient(api_url=api_url)
+
+        # Handle different commands
+        if args.command == 'table':
+            result = client.get_table_rows(
+                code=args.contract,
+                table=args.table,
+                scope=args.scope,
+                limit=args.limit if args.limit else 10,
+                lower_bound=args.lower_bound if args.lower_bound else "",
+                upper_bound=args.upper_bound if args.upper_bound else "",
+                index_position=args.index_position if args.index_position else "",
+                key_type=args.key_type if args.key_type else ""
+            )
+            print(json.dumps(result))
+            
+        elif args.command == 'table-all':
             result = client.get_table(
                 code=args.contract,
                 table=args.table,
@@ -211,12 +189,55 @@ def main():
                 key_type=args.key_type if hasattr(args, 'key_type') else ""
             )
             print(json.dumps(result))
+            
+        elif args.command == 'transfer':
+            result = client.transfer(
+                from_account=args.from_account,
+                to_account=args.to_account,
+                quantity=args.quantity,
+                memo=args.memo if hasattr(args, 'memo') else "",
+                contract=args.contract if hasattr(args, 'contract') else None
+            )
+            print(json.dumps(result))
+            
+        elif args.command == 'balance':
+            result = client.get_currency_balance(
+                contract=args.contract,
+                account=args.account,
+                symbol=args.symbol
+            )
+            print(json.dumps(result))
+            
+        elif args.command == 'execute':
+            # Check if wallet needs to be unlocked
+            if args.unlock and not unlock_wallet_if_needed(client, args, args.actor):
+                return 1
+                
+            result = client.execute_action(
+                contract=args.contract,
+                action_name=args.action,
+                data=json.loads(args.data),
+                actor=args.actor
+            )
+            print(json.dumps(result))
+            
+        else:
+            print(json.dumps({
+                "success": False,
+                "error": f"Unknown command: {args.command}"
+            }))
+            return 1
+            
     except BrokenPipeError:
-        # Python flushes standard streams on exit; redirect remaining output
-        # to devnull to avoid another BrokenPipeError at shutdown
         devnull = os.open(os.devnull, os.O_WRONLY)
         os.dup2(devnull, sys.stdout.fileno())
         sys.exit(1)
+    except Exception as e:
+        print(json.dumps({
+            "success": False,
+            "error": str(e)
+        }))
+        return 1
 
 if __name__ == "__main__":
     main()

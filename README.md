@@ -4,82 +4,68 @@ A Python client for interacting with the Libre blockchain.
 
 ## Installation 
 
-From PyPI (not yet available):
 ```bash
 pip install pylibre
 ```
 
-For local development:
+## Usage
+
+### Global Options
+- `--api-url`: API endpoint URL (required)
+  - Testnet: `https://testnet.libre.org`
+  - Mainnet: `https://lb.libre.org`
+- `--env-file`: Environment file path (default: .env.testnet)
+- `--unlock`: Unlock wallet for transactions (requires password file)
+
+### Query Table Data
 ```bash
-git clone https://github.com/bensig/pylibre.git
-cd pylibre
-pip install -e .
+# Get filtered rows from a table
+pylibre --api-url https://testnet.libre.org table farm.libre account BTCUSD --lower-bound cesarcv --upper-bound cesarcv
+
+# Get all rows from a table
+pylibre --api-url https://testnet.libre.org table-all stake.libre stake stake.libre
 ```
 
-## Prerequisites
-
-- cleos
-- keosd
-- a wallet for the account you want to use **
-- a .env.testnet file in the root of the project with the following variables:
+### Get Token Balance
+```bash
+pylibre --api-url https://testnet.libre.org balance usdt.libre myaccount USDT
 ```
+
+### Transfer Tokens
+```bash
+# Simple transfer (contract from_account to_account quantity memo)
+pylibre --api-url https://testnet.libre.org transfer usdt.libre sender recipient "1.00000000 USDT" "memo"
+
+# Transfer with wallet unlock
+pylibre --api-url https://testnet.libre.org --unlock transfer usdt.libre sender recipient "1.00000000 USDT" "memo"
+```
+
+### Execute Contract Actions
+```bash
+pylibre --api-url https://testnet.libre.org execute reward.libre updateall myaccount '{"max_steps":"500"}'
+```
+
+## Environment Setup
+
+Create a `.env.testnet` or `.env.mainnet` file:
+```bash
+# For testnet
 API_URL=https://testnet.libre.org
+
+# For mainnet
+# API_URL=https://lb.libre.org
 ```
 
-** If you are going to be using authorization keys, you must have keosd running locally with keys in a wallet loaded - the password for the wallet must be in a file called account_wallet.pwd in the root of the project for any accounts you use.
-
-Create a wallet for the account you want to use - example my libre account is "bentester":
-
+For transactions requiring authorization, create a wallet password file:
 ```bash
-cleos create wallet -n bentester -f bentester_wallet.pwd
+# Create wallet and save password
+cleos wallet create -n myaccount -f myaccount_wallet.pwd
 ```
 
-# Usage 
-
-It does a few simple things - pretty easy to use - downloading an entire table, doing a transfer, or getting specific row data from a table using a filter "upper/lower bound"… 
-
-###Transfer example: 
-```
-client.transfer("usdt.libre", "bentester", "bentest3", "0.00100000 USDT", "Test")
-```
-
-### Download an entire table: 
-```
-client.get_table(
-    code="stake.libre",
-    table="stake",
-    scope="stake.libre"
-)
-```
-
-### Or just get a single row using the cli and filtering for an account:
-```
-pylibre --env-file .env.mainnet --contract farm.libre --action get_table \  --actor bentester --data '{"table":"account","scope":"BTCUSD","limit":1,"lower_bound":"cesarcv","upper_bound":"cesarcv","index_position":"primary","key_type":"name"}' | jq .
-```
-
-It still uses cleos for packing, signing, and broadcasting - but it's faster than EOSJS still by about 30-40% based on my testing. 
-
-
-## More Python Examples
-
-Check out or run [examples.py](examples/examples.py) - of course you must change bentester to the account you have a key for...
-
-## More CLI Examples 
-
-### Get Balance
-```bash
-pylibre --contract btc.libre --action get_balance --actor bentester --symbol BTC --get-balance
-```
-
-### Transfer with unlock - requires a wallet password file for sender - ex: "bentester_wallet.pwd"
-```bash
-pylibre --contract usdt.libre --action transfer --actor bentester --unlock --data '{"from":"bentester","to":"bentest3","quantity":"0.00100000 USDT","memo":"Test"}'
-```
-
-### Run an action on a contract with data
-```bash
-pylibre --contract reward.libre --action updateall --data '{"max_steps":"500"}' --actor bentester
-```
+## Common Token Contracts
+- USDT: usdt.libre (8 decimals)
+- BTC: btc.libre (8 decimals)
+- LIBRE: eosio.token (4 decimals)
 
 ## License
 
