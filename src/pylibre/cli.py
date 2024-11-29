@@ -4,79 +4,146 @@ from dotenv import load_dotenv
 import argparse
 from .client import LibreClient
 
+def create_parser():
+    parser = argparse.ArgumentParser(
+        description='Libre Blockchain Client CLI',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+    # Global options (--api-url, --env-file) must come BEFORE the command:
+    pylibre --api-url https://testnet.libre.org --env-file .env.custom balance usdt.libre bentester USDT
 
-# Command-Line Interface (CLI)
+    # Command-specific options come AFTER the command:
+    pylibre --api-url https://testnet.libre.org table reward.libre rewards bentester --limit 10
+
+    # Available commands:
+    
+    # Get token balance
+    pylibre balance usdt.libre bentester USDT
+
+    # Get table data (with pagination)
+    pylibre table reward.libre rewards bentester --limit 10
+
+    # Get all table data
+    pylibre table-all reward.libre rewards bentester
+
+    # Execute contract action
+    pylibre execute reward.libre updateall bentester '{"max_steps":"500"}'
+
+    # Transfer tokens
+    pylibre transfer usdt.libre bentester bentest2 "1.0000 USDT" "memo"
+    """
+    )
+
+    # Global options
+    parser.add_argument('--env-file', default='.env.testnet', 
+                       help='Environment file path (default: .env.testnet)')
+    parser.add_argument('--api-url', 
+                       help='API URL (e.g., https://testnet.libre.org) - overrides API_URL from env file')
+
+    subparsers = parser.add_subparsers(dest='command', help='Available commands')
+
+    # Balance command
+    balance_parser = subparsers.add_parser('balance', help='Get token balance')
+    balance_parser.add_argument('contract', help='Token contract (e.g., usdt.libre)')
+    balance_parser.add_argument('account', help='Account to check')
+    balance_parser.add_argument('symbol', help='Token symbol (e.g., USDT)')
+
+    # Table command
+    table_parser = subparsers.add_parser('table', help='Get table rows')
+    table_parser.add_argument('contract', help='Contract account')
+    table_parser.add_argument('table', help='Table name')
+    table_parser.add_argument('scope', help='Table scope')
+    table_parser.add_argument('--limit', type=int, default=10, help='Number of rows to fetch')
+    table_parser.add_argument('--index-position', help='Index position for table queries')
+    table_parser.add_argument('--key-type', help='Key type for table queries')
+
+    # Table-all command
+    table_all_parser = subparsers.add_parser('table-all', help='Get all table rows')
+    table_all_parser.add_argument('contract', help='Contract account')
+    table_all_parser.add_argument('table', help='Table name')
+    table_all_parser.add_argument('scope', help='Table scope')
+    table_all_parser.add_argument('--index-position', help='Index position for table queries')
+    table_all_parser.add_argument('--key-type', help='Key type for table queries')
+
+    # Execute command
+    execute_parser = subparsers.add_parser('execute', help='Execute contract action')
+    execute_parser.add_argument('contract', help='Contract account')
+    execute_parser.add_argument('action', help='Action name')
+    execute_parser.add_argument('actor', help='Account executing the action')
+    execute_parser.add_argument('data', help='Action data as JSON string')
+
+    # Transfer command
+    transfer_parser = subparsers.add_parser('transfer', help='Transfer tokens')
+    transfer_parser.add_argument('contract', help='Token contract')
+    transfer_parser.add_argument('from_account', help='Sender account')
+    transfer_parser.add_argument('to_account', help='Recipient account')
+    transfer_parser.add_argument('quantity', help='Amount with symbol (e.g., "1.0000 USDT")')
+    transfer_parser.add_argument('memo', nargs='?', default='', help='Transfer memo')
+
+    return parser
+
 def main():
-    parser = argparse.ArgumentParser(description='Libre Blockchain Client')
-    parser.add_argument('--env-file', default='.env.testnet', help='Environment file path')
-    parser.add_argument('--contract', required=True, help='Contract account name')
-    parser.add_argument('--action', required=True, help='Action name')
-    parser.add_argument('--actor', required=True, help='Account executing the action')
-    parser.add_argument('--symbol', help='Token symbol for balance check')
-    parser.add_argument('--unlock', action='store_true', help='Unlock wallet before executing action')
-    parser.add_argument('--index-position', help='Index position for table queries')
-    parser.add_argument('--key-type', help='Key type for table queries')
-    
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument('--data', help='Action data as JSON string')
-    group.add_argument('--get-balance', action='store_true', help='Get token balance')
-    
+    parser = create_parser()
     args = parser.parse_args()
 
+    if not args.command:
+        parser.print_help()
+        return 1
+
+    # Load environment variables
     load_dotenv(args.env_file)
-    api_url = os.getenv("API_URL")
+    api_url = args.api_url or os.getenv("API_URL")
     if not api_url:
-        raise ValueError("Missing required environment variable: API_URL")
+        print("Error: API URL must be provided either through --api-url argument or API_URL environment variable")
+        return 1
 
     client = LibreClient(api_url)
     client.load_account_keys(args.env_file)
 
-    if args.unlock:
-        unlock_result = client.unlock_wallet(args.actor, f"{args.actor}_wallet.pwd")
-        if not unlock_result.get("success", False):
-            print(json.dumps(unlock_result))
-            return
+    if args.command == 'balance':
+        result = client.get_currency_balance(args.contract, args.account, args.symbol)
+        print(json.dumps(result))
 
-    if args.get_balance:
-        if not args.symbol:
-            raise ValueError("--symbol is required with --get-balance")
-        balance = client.get_currency_balance(args.contract, args.actor, args.symbol)
-        print(json.dumps(balance))
-        return
+    elif args.command == 'table':
+        result = client.get_table_rows(
+            code=args.contract,
+            table=args.table,
+            scope=args.scope,
+            limit=args.limit,
+            index_position=args.index_position,
+            key_type=args.key_type
+        )
+        print(json.dumps(result))
 
-    if args.action == 'get_table':
-        table_data = json.loads(args.data)
-        if table_data.get("get_all", False):  # New flag to use get_table instead of get_table_rows
-            rows = client.get_table(
-                code=args.contract,
-                table=table_data["table"],
-                scope=table_data.get("scope", args.actor),
-                index_position=table_data.get("index_position", args.index_position),
-                key_type=table_data.get("key_type", args.key_type)
-            )
-        else:
-            rows = client.get_table_rows(
-                code=args.contract,
-                table=table_data["table"],
-                scope=table_data.get("scope", args.actor),
-                limit=table_data.get("limit", 10),
-                lower_bound=table_data.get("lower_bound", ""),
-                upper_bound=table_data.get("upper_bound", ""),
-                index_position=table_data.get("index_position", args.index_position),
-                key_type=table_data.get("key_type", args.key_type),
-                reverse=table_data.get("reverse", False)
-            )
-        print(json.dumps(rows))
-        return
+    elif args.command == 'table-all':
+        result = client.get_table(
+            code=args.contract,
+            table=args.table,
+            scope=args.scope,
+            index_position=args.index_position,
+            key_type=args.key_type
+        )
+        print(json.dumps(result))
 
-    action_data = json.loads(args.data)
-    response = client.execute_action(
-        contract=args.contract,
-        action_name=args.action,
-        data=action_data,
-        actor=args.actor
-    )
-    print(json.dumps(response))
+    elif args.command == 'execute':
+        result = client.execute_action(
+            contract=args.contract,
+            action_name=args.action,
+            data=json.loads(args.data),
+            actor=args.actor
+        )
+        print(json.dumps(result))
+
+    elif args.command == 'transfer':
+        result = client.transfer(
+            contract=args.contract,
+            from_account=args.from_account,
+            to_account=args.to_account,
+            quantity=args.quantity,
+            memo=args.memo
+        )
+        print(json.dumps(result))
 
 if __name__ == "__main__":
     main()
