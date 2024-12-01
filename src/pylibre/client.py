@@ -152,20 +152,15 @@ class LibreClient:
         """Unlock a wallet using its password file."""
         try:
             # Open wallet first
-            print(f"DEBUG: Opening wallet {wallet_name}")  # Debug line
-            subprocess.run(["cleos", "wallet", "open", "-n", wallet_name], check=True)
+            subprocess.run(["cleos", "wallet", "open", "-n", wallet_name], 
+                          capture_output=True, check=True)
             
             # Unlock wallet
-            print(f"DEBUG: Reading password from {wallet_password_file}")  # Debug line
             with open(wallet_password_file, "r") as f:
                 password = f.read().strip()
-            print(f"DEBUG: Attempting to unlock with password length: {len(password)}")  # Debug line
             
             unlock_cmd = ["cleos", "wallet", "unlock", "-n", wallet_name, "--password", password]
-            print(f"DEBUG: Running command: {' '.join(unlock_cmd)}")  # Debug line
-            
             result = subprocess.run(unlock_cmd, capture_output=True, text=True, check=True)
-            print(f"DEBUG: Unlock result: {result.stdout}")  # Debug line
             
             return self.format_response(True)
         except FileNotFoundError:
