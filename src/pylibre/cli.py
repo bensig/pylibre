@@ -48,23 +48,41 @@ Note:
     subparsers = parser.add_subparsers(dest='command', help='Available commands')
 
     # Balance command
-    balance_parser = subparsers.add_parser('balance', help='Get token balance')
-    balance_parser.add_argument('contract', help='Token contract (e.g., usdt.libre)')
+    balance_parser = subparsers.add_parser('balance', 
+        help='Get token balance',
+        description="""
+        Get token balance for an account. Contract is optional for common tokens:
+        - USDT: usdt.libre (8 decimals)
+        - BTC: btc.libre (8 decimals)
+        - LIBRE: eosio.token (4 decimals)
+        
+        Examples:
+          # Check balance with auto-detected contract
+          pylibre balance bentester USDT
+          
+          # Check balance with explicit contract
+          pylibre balance --contract eosio.token bentester LIBRE
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    balance_parser.add_argument('--contract', help='Token contract (optional for USDT/BTC/LIBRE)')
     balance_parser.add_argument('account', help='Account to check')
     balance_parser.add_argument('symbol', help='Token symbol (e.g., USDT)')
 
     # Table command
     table_parser = subparsers.add_parser('table', 
-        help='Query table data from smart contracts',
+        help='Query table data from smart contracts (paginated)',
         description="""
         Query table data from smart contracts with optional filtering.
+        Note: This command returns a maximum of 10 rows by default.
+        Use --limit to fetch more rows, or use 'table-all' command to fetch all rows.
         
         Examples:
-          # Get all rows
+          # Get default 10 rows
           pylibre table stake.libre stake stake.libre
           
           # Get filtered rows with pagination
-          pylibre table stake.libre stake stake.libre --limit 1 --lower-bound 1 --upper-bound 1
+          pylibre table stake.libre stake stake.libre --limit 100 --lower-bound 1 --upper-bound 1
           
           # Get rows using secondary index
           pylibre table farm.libre account BTCUSD --limit 1 --lower-bound cesarcv --upper-bound cesarcv --index-position primary --key-type name
@@ -81,7 +99,22 @@ Note:
     table_parser.add_argument('--key-type', help='Key type for table queries (e.g., name)')
 
     # Table-all command
-    table_all_parser = subparsers.add_parser('table-all', help='Get all table rows')
+    table_all_parser = subparsers.add_parser('table-all', 
+        help='Get all rows from a table (auto-pagination)',
+        description="""
+        Fetch all rows from a smart contract table by automatically handling pagination.
+        This is useful when you need to retrieve the complete table contents.
+        Progress will be displayed while fetching.
+        
+        Examples:
+          # Get all rows from a table
+          pylibre table-all stake.libre stake stake.libre
+          
+          # Get all rows using a secondary index
+          pylibre table-all stake.libre stake stake.libre --index-position 2 --key-type name
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     table_all_parser.add_argument('contract', help='Contract account')
     table_all_parser.add_argument('table', help='Table name')
     table_all_parser.add_argument('scope', help='Table scope')
@@ -225,7 +258,7 @@ def main():
             
         elif args.command == 'balance':
             result = client.get_currency_balance(
-                contract=args.contract,
+                contract=args.contract,  # Will be None if not specified
                 account=args.account,
                 symbol=args.symbol
             )

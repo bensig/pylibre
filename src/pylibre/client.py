@@ -70,8 +70,28 @@ class LibreClient:
         return response
 
     def get_currency_balance(self, contract, account, symbol):
-        """Fetch token balance for an account."""
+        """
+        Fetch token balance for an account.
+        
+        Automatically handles common tokens if contract is None:
+        - "BTC": contract="btc.libre"
+        - "USDT": contract="usdt.libre"
+        - "LIBRE": contract="eosio.token"
+        """
         try:
+            # Define token specifications
+            TOKEN_SPECS = {
+                "BTC": {"contract": "btc.libre"},
+                "USDT": {"contract": "usdt.libre"},
+                "LIBRE": {"contract": "eosio.token"}
+            }
+            
+            # If no contract specified, try to determine from symbol
+            if contract is None and symbol in TOKEN_SPECS:
+                contract = TOKEN_SPECS[symbol]["contract"]
+            elif contract is None:
+                raise Exception(f"No contract specified for token {symbol} and no default contract known.")
+
             response = requests.post(
                 f"{self.api_url}/v1/chain/get_currency_balance",
                 json={"code": contract, "account": account, "symbol": symbol}
