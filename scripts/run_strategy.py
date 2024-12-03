@@ -1,8 +1,9 @@
 from pylibre import LibreClient
 from pylibre.manager.account_manager import AccountManager
 from pylibre.strategies.random_walk import RandomWalkStrategy
-from decimal import Decimal
+from decimal import Decimal, ROUND_DOWN
 import argparse
+import sys
 
 def main():
     parser = argparse.ArgumentParser(description='Run a trading strategy')
@@ -51,6 +52,42 @@ def main():
         return
 
     print("🔓 Wallet unlocked successfully")
+
+    # Check account balances
+    base_balance = client.get_currency_balance(None, args.account, args.base)
+    quote_balance = client.get_currency_balance(None, args.account, args.quote)
+    
+    if isinstance(base_balance, dict) and not base_balance.get("success"):
+        print(f"❌ Failed to fetch base balance: {base_balance.get('error')}")
+        return
+    if isinstance(quote_balance, dict) and not quote_balance.get("success"):
+        print(f"❌ Failed to fetch quote balance: {quote_balance.get('error')}")
+        return
+
+    # Extract amounts from balance strings (format: "1.00000000 SYMBOL")
+    base_amount = Decimal(base_balance.split()[0])
+    quote_amount = Decimal(quote_balance.split()[0])
+    
+    print(f"💰 Account balances:")
+    print(f"   {base_amount} {args.base}")
+    print(f"   {quote_amount} {args.quote}")
+
+    # Calculate maximum possible trade quantity based on balances
+    price = Decimal(args.price)
+    max_base_trade = base_amount.quantize(Decimal('0.00000001'), rounding=ROUND_DOWN)
+    max_quote_trade = (quote_amount / price).quantize(Decimal('0.00000001'), rounding=ROUND_DOWN)
+    
+    # Use the smaller of the requested quantity or maximum possible trade
+    requested_quantity = Decimal(trading_config['quantity'])
+    safe_quantity = min(requested_quantity, max_base_trade, max_quote_trade)
+    
+    if safe_quantity < requested_quantity:
+        print(f"⚠️  Reducing trade quantity from {requested_quantity} to {safe_quantity} due to balance constraints")
+        if safe_quantity == 0:
+            print("❌ Insufficient balance to trade")
+            return
+    
+    trading_config['quantity'] = str(safe_quantity)
 
     # Initialize and run strategy
     if args.strategy == "RandomWalkStrategy":
