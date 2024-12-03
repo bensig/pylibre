@@ -24,8 +24,14 @@ pylibre/
 
 ## Installation 
 
+Once on PyPi (coming soon), install with:
 ```bash
 pip install pylibre
+``
+
+Or clone the repo and run:
+```bash
+pip install -e .
 ```
 
 ## Configuration
