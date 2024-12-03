@@ -38,21 +38,21 @@ class RandomWalkStrategy(BaseStrategy):
             bid_price = current_price * (Decimal('1') - spread/Decimal('2'))
             ask_price = current_price * (Decimal('1') + spread/Decimal('2'))
             
-            print(f"\n📊 New price: {current_price:.10f} {self.base_symbol}")
+            print(f"\n📊 New price: {current_price:.10f} {self.quote_symbol}")
             print(f"Movement: {signal['movement_percentage']:+.3f}%")
-            print(f"Bid: {bid_price:.10f} {self.base_symbol}")
-            print(f"Ask: {ask_price:.10f} {self.base_symbol}")
+            print(f"Bid: {bid_price:.10f} {self.quote_symbol}")
+            print(f"Ask: {ask_price:.10f} {self.quote_symbol}")
 
             # Place bid
             quantity = self.config.get('quantity', '100.00000000')
-            print(f"\n💸 Placing bid for {quantity} {self.quote_symbol}")
+            print(f"\n💸 Placing bid for {quantity} {self.base_symbol}")
             bid_result = self.dex.place_order(
                 account=self.account,
                 order_type="buy",
                 quantity=quantity,
                 price=f"{bid_price:.10f}",
-                base_symbol=self.base_symbol,
-                quote_symbol=self.quote_symbol
+                quote_symbol=self.quote_symbol,
+                base_symbol=self.base_symbol
             )
             
             if not bid_result.get("success"):
@@ -62,14 +62,14 @@ class RandomWalkStrategy(BaseStrategy):
             print(f"✅ Bid placed successfully: {bid_result['data']['transaction_id']}")
             
             # Place ask
-            print(f"💰 Placing ask for {quantity} {self.quote_symbol}")
+            print(f"💰 Placing ask for {quantity} {self.base_symbol}")
             ask_result = self.dex.place_order(
                 account=self.account,
                 order_type="sell",
                 quantity=quantity,
                 price=f"{ask_price:.10f}",
-                base_symbol=self.base_symbol,
-                quote_symbol=self.quote_symbol
+                quote_symbol=self.quote_symbol,
+                base_symbol=self.base_symbol
             )
             
             if not ask_result.get("success"):
@@ -91,8 +91,8 @@ class RandomWalkStrategy(BaseStrategy):
         try:
             # Fetch current orders
             order_book = self.dex.fetch_order_book(
-                base_symbol=self.base_symbol,
-                quote_symbol=self.quote_symbol
+                quote_symbol=self.quote_symbol,
+                base_symbol=self.base_symbol
             )
             
             # Find our orders
@@ -106,8 +106,8 @@ class RandomWalkStrategy(BaseStrategy):
                 result = self.dex.cancel_order(
                     account=self.account,
                     order_id=bid["identifier"],
-                    base_symbol=self.base_symbol,
-                    quote_symbol=self.quote_symbol
+                    quote_symbol=self.quote_symbol,
+                    base_symbol=self.base_symbol
                 )
                 if not result.get("success"):
                     print(f"❌ Failed to cancel bid {bid['identifier']}")
@@ -118,8 +118,8 @@ class RandomWalkStrategy(BaseStrategy):
                 result = self.dex.cancel_order(
                     account=self.account,
                     order_id=offer["identifier"],
-                    base_symbol=self.base_symbol,
-                    quote_symbol=self.quote_symbol
+                    quote_symbol=self.quote_symbol,
+                    base_symbol=self.base_symbol
                 )
                 if not result.get("success"):
                     print(f"❌ Failed to cancel offer {offer['identifier']}")

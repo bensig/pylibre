@@ -1,10 +1,19 @@
 from pylibre import LibreClient
+from pylibre.manager.account_manager import AccountManager
 import json
 import time
 
-# Initialize client
+# Initialize client and account manager
 client = LibreClient("https://testnet.libre.org")
 client.load_account_keys('.env.testnet')
+account_manager = AccountManager()
+
+# Get account config and unlock wallet
+account_config = account_manager.get_account_config("bentester")
+client.unlock_wallet(
+    account_config['wallet_name'],
+    account_config['wallet_password_file']
+)
 
 print("\n📊 Getting table data from farm.libre contract")
 farm_data = client.get_table(

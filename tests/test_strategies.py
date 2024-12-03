@@ -47,8 +47,8 @@ class TestRandomWalkStrategy(unittest.TestCase):
         self.strategy = RandomWalkStrategy(
             client=self.mock_client,
             account="bentester",
-            base_symbol="BTC",
-            quote_symbol="LIBRE",
+            quote_symbol="BTC",
+            base_symbol="LIBRE",
             config=self.config
         )
         # Explicitly set the dex attribute on the strategy

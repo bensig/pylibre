@@ -8,7 +8,7 @@
         ],
         "allowed_pairs": [
             "LIBRE/BTC",
-            "LIBRE/USDT"
+            "BTC/USDT"
         ],
         "default_settings": {
             "interval": 5,

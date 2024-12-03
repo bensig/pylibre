@@ -7,12 +7,12 @@ import time
 client = LibreClient("https://testnet.libre.org")
 dex = DexClient(client)
 from_account = "bentester"
-base_symbol = "BTC"
-quote_symbol = "LIBRE"
+quote_symbol = "BTC"
+base_symbol = "LIBRE"
 
 # Cancel all existing orders for the account
 print("\n🧹 Cancelling all existing orders for account:", from_account)
-order_book = dex.fetch_order_book(base_symbol=base_symbol, quote_symbol=quote_symbol)
+order_book = dex.fetch_order_book(quote_symbol=quote_symbol, base_symbol=base_symbol)
 
 # Cancel all bids
 for bid in order_book["bids"]:
@@ -21,8 +21,8 @@ for bid in order_book["bids"]:
         cancel_result = dex.cancel_order(
             account=from_account,
             order_id=bid['identifier'],
-            base_symbol=base_symbol,
-            quote_symbol=quote_symbol
+            quote_symbol=quote_symbol,
+            base_symbol=base_symbol
         )
         print("✅ Bid cancelled" if cancel_result["success"] else "❌ Failed to cancel bid")
 
@@ -33,8 +33,8 @@ for offer in order_book["offers"]:
         cancel_result = dex.cancel_order(
             account=from_account,
             order_id=offer['identifier'],
-            base_symbol=base_symbol,
-            quote_symbol=quote_symbol
+            quote_symbol=quote_symbol,
+            base_symbol=base_symbol
         )
         print("✅ Offer cancelled" if cancel_result["success"] else "❌ Failed to cancel offer")
 
@@ -42,17 +42,17 @@ for offer in order_book["offers"]:
 from_account = "bentester"  # Account placing the bid
 quantity = "100.00000000"  # Amount of LIBRE to buy
 price = "0.0000000100"    # Price willing to pay in BTC per LIBRE
-base_symbol = "BTC"       # What you're paying with
-quote_symbol = "LIBRE"    # What you're buying
+quote_symbol = "BTC"       # What you're paying with
+base_symbol = "LIBRE"    # What you're buying
 
-print(f"\n💸 Placing bid order for {quantity} {quote_symbol} at {price} {base_symbol} per {quote_symbol}")
+print(f"\n💸 Placing bid order for {quantity} {base_symbol} at {price} {quote_symbol} per {base_symbol}")
 result = dex.place_order(
     account=from_account,
     order_type="buy",
     quantity=quantity,
     price=price,
-    base_symbol=base_symbol,
-    quote_symbol=quote_symbol
+    quote_symbol=quote_symbol,
+    base_symbol=base_symbol
 )
 
 print("Bid placement result:", json.dumps(result, indent=2))
@@ -72,14 +72,14 @@ print("\n🔄 Now placing sell order...")
 quantity_sell = "100.00000000"  # Amount of LIBRE to sell
 price_sell = "0.0000000122"    # Price asking in BTC per LIBRE (1.22 SATS)
 
-print(f"\n💰 Placing sell order for {quantity_sell} {quote_symbol} at {price_sell} {base_symbol} per {quote_symbol}")
+print(f"\n💰 Placing sell order for {quantity_sell} {base_symbol} at {price_sell} {quote_symbol} per {base_symbol}")
 result_sell = dex.place_order(
     account=from_account,
     order_type="sell",
     quantity=quantity_sell,
     price=price_sell,
-    base_symbol=base_symbol,
-    quote_symbol=quote_symbol
+    quote_symbol=quote_symbol,
+    base_symbol=base_symbol
 )
 
 print("Sell order placement result:", json.dumps(result_sell, indent=2))
@@ -97,7 +97,7 @@ print(json.dumps(result_sell, indent=2))
 # Fetch the order book
 print("\n📚 Fetching fresh order book...")
 time.sleep(2)  # Add a 2-second delay to allow orders to propagate
-order_book = dex.fetch_order_book(base_symbol=base_symbol, quote_symbol=quote_symbol)
+order_book = dex.fetch_order_book(quote_symbol=quote_symbol, base_symbol=base_symbol)
 print("Order book:", json.dumps(order_book, indent=2))
 
 # Find and cancel the bid order
@@ -113,8 +113,8 @@ for bid in order_book["bids"]:
         cancel_result = dex.cancel_order(
             account=from_account,
             order_id=bid['identifier'],
-            base_symbol=base_symbol,
-            quote_symbol=quote_symbol
+            quote_symbol=quote_symbol,
+            base_symbol=base_symbol
         )
         
         print("Cancel bid result:", json.dumps(cancel_result, indent=2))
@@ -139,8 +139,8 @@ for offer in order_book["offers"]:
         cancel_result = dex.cancel_order(
             account=from_account,
             order_id=offer['identifier'],
-            base_symbol=base_symbol,
-            quote_symbol=quote_symbol
+            quote_symbol=quote_symbol,
+            base_symbol=base_symbol
         )
         
         print("Cancel sell result:", json.dumps(cancel_result, indent=2))

@@ -8,8 +8,8 @@ def main():
     parser = argparse.ArgumentParser(description='Run a trading strategy')
     parser.add_argument('--account', required=True, help='Trading account name')
     parser.add_argument('--strategy', required=True, help='Strategy name')
-    parser.add_argument('--base', default='BTC', help='Base asset symbol')
-    parser.add_argument('--quote', default='LIBRE', help='Quote asset symbol')
+    parser.add_argument('--base', default='LIBRE', help='Base asset symbol')
+    parser.add_argument('--quote', default='BTC', help='Quote asset symbol')
     parser.add_argument('--price', default='0.0000000100', help='Initial price')
     args = parser.parse_args()
 
@@ -18,7 +18,10 @@ def main():
 
     # Validate account configuration
     if not account_manager.validate_account(
-        args.account, args.strategy, args.base, args.quote
+        args.account, 
+        args.strategy, 
+        args.quote, 
+        args.base
     ):
         return
 
@@ -28,12 +31,12 @@ def main():
     
     # Add required configuration
     trading_config.update({
-        'current_price': Decimal(args.price),  # Add initial price
+        'current_price': Decimal(args.price),
         'min_change_percentage': Decimal('0.01'),   # 1%
         'max_change_percentage': Decimal('0.20'),   # 20%
         'spread_percentage': Decimal('0.02'),       # 2%
-        'quantity': '100.00000000',                 # Amount per order
-        'interval': 5                               # Seconds between iterations
+        'quantity': '100.00000000',                # Amount per order
+        'interval': 5                              # Seconds between iterations
     })
 
     # Initialize client and unlock wallet
@@ -54,8 +57,8 @@ def main():
         strategy = RandomWalkStrategy(
             client=client,
             account=args.account,
-            base_symbol=args.base,
             quote_symbol=args.quote,
+            base_symbol=args.base,
             config=trading_config
         )
         strategy.run()

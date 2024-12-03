@@ -7,8 +7,8 @@ class BaseStrategy(ABC):
     def __init__(self, 
                  client: LibreClient,
                  account: str,
-                 base_symbol: str,
                  quote_symbol: str,
+                 base_symbol: str,
                  config: Dict[str, Any]):
         """
         Initialize the base strategy.
@@ -16,15 +16,15 @@ class BaseStrategy(ABC):
         Args:
             client: LibreClient instance for blockchain interaction
             account: Trading account name
-            base_symbol: Base asset symbol (e.g., 'BTC')
-            quote_symbol: Quote asset symbol (e.g., 'LIBRE')
+            quote_symbol: Base asset symbol (e.g., 'BTC')
+            base_symbol: Quote asset symbol (e.g., 'LIBRE')
             config: Strategy-specific configuration parameters
         """
         self.client = client
         self.dex = DexClient(client)
         self.account = account
-        self.base_symbol = base_symbol
         self.quote_symbol = quote_symbol
+        self.base_symbol = base_symbol
         self.config = config
         self.is_running = False
 
@@ -60,8 +60,8 @@ class BaseStrategy(ABC):
         """
         try:
             order_book = self.dex.fetch_order_book(
-                base_symbol=self.base_symbol,
-                quote_symbol=self.quote_symbol
+                quote_symbol=self.quote_symbol,
+                base_symbol=self.base_symbol
             )
             
             # Cancel bids
@@ -70,8 +70,8 @@ class BaseStrategy(ABC):
                     self.dex.cancel_order(
                         account=self.account,
                         order_id=bid['identifier'],
-                        base_symbol=self.base_symbol,
-                        quote_symbol=self.quote_symbol
+                        quote_symbol=self.quote_symbol,
+                        base_symbol=self.base_symbol
                     )
             
             # Cancel offers
@@ -80,8 +80,8 @@ class BaseStrategy(ABC):
                     self.dex.cancel_order(
                         account=self.account,
                         order_id=offer['identifier'],
-                        base_symbol=self.base_symbol,
-                        quote_symbol=self.quote_symbol
+                        quote_symbol=self.quote_symbol,
+                        base_symbol=self.base_symbol
                     )
             
             return True
@@ -94,7 +94,7 @@ class BaseStrategy(ABC):
         Main strategy execution loop.
         """
         self.is_running = True
-        print(f"🚀 Starting {self.__class__.__name__} for {self.quote_symbol}/{self.base_symbol}")
+        print(f"🚀 Starting {self.__class__.__name__} for {self.base_symbol}/{self.quote_symbol}")
         
         try:
             while self.is_running:

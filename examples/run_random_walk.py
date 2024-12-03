@@ -28,8 +28,8 @@ def main():
     strategy = RandomWalkStrategy(
         client=client,
         account="bentester",
-        base_symbol="BTC",
-        quote_symbol="LIBRE",
+        quote_symbol="BTC",
+        base_symbol="LIBRE",
         config=config
     )
     

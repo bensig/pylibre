@@ -25,15 +25,15 @@ class AccountManager:
         return self.accounts.get(account_name)
 
     def validate_account(self, account_name: str, strategy_name: str, 
-                        base_symbol: str, quote_symbol: str) -> bool:
+                        quote_symbol: str, base_symbol: str) -> bool:
         """
         Validate if an account is properly configured for a strategy and trading pair.
         
         Args:
             account_name: Name of the trading account
             strategy_name: Name of the strategy to run
-            base_symbol: Base asset symbol (e.g., 'BTC')
-            quote_symbol: Quote asset symbol (e.g., 'LIBRE')
+            quote_symbol: Quote asset symbol (e.g., 'BTC')
+            base_symbol: Base asset symbol (e.g., 'LIBRE')
         """
         account = self.get_account_config(account_name)
         if not account:
@@ -45,8 +45,8 @@ class AccountManager:
             print(f"❌ Strategy {strategy_name} not allowed for account {account_name}")
             return False
 
-        # Check if trading pair is allowed
-        pair = f"{quote_symbol}/{base_symbol}"
+        # Check if trading pair is allowed (in format BASE/QUOTE)
+        pair = f"{base_symbol}/{quote_symbol}"
         if pair not in account.get('allowed_pairs', []):
             print(f"❌ Trading pair {pair} not allowed for account {account_name}")
             return False
