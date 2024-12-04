@@ -65,24 +65,34 @@ def main():
         return
 
     # Extract amounts from balance strings (format: "1.00000000 SYMBOL")
-    base_amount = Decimal(base_balance.split()[0])
-    quote_amount = Decimal(quote_balance.split()[0])
+    base_amount = Decimal(base_balance.split()[0]).normalize()
+    quote_amount = Decimal(quote_balance.split()[0]).normalize()
     
     print(f"💰 Account balances:")
-    print(f"   {base_amount} {args.base}")
-    print(f"   {quote_amount} {args.quote}")
+    print(f"   {base_amount:.8f} {args.base}")
+    print(f"   {quote_amount:.8f} {args.quote}")
 
     # Calculate maximum possible trade quantity based on balances
-    price = Decimal(args.price)
-    max_base_trade = base_amount.quantize(Decimal('0.00000001'), rounding=ROUND_DOWN)
-    max_quote_trade = (quote_amount / price).quantize(Decimal('0.00000001'), rounding=ROUND_DOWN)
+    price = Decimal(args.price).normalize()
     
+    # For BTC/USDT pair, we need different precision and calculations
+    if args.base == "BTC":
+        max_base_trade = base_amount.quantize(Decimal('0.00000001'), rounding=ROUND_DOWN)
+        max_quote_trade = (quote_amount / price).quantize(Decimal('0.00000001'), rounding=ROUND_DOWN)
+        
+        # Adjust default quantity for BTC
+        if trading_config['quantity'] == '100.00000000':  # If it's still the default value
+            trading_config['quantity'] = '0.00100000'     # Default to 0.001 BTC for BTC pairs
+    else:
+        max_base_trade = base_amount.quantize(Decimal('0.00000001'), rounding=ROUND_DOWN)
+        max_quote_trade = (quote_amount / price).quantize(Decimal('0.00000001'), rounding=ROUND_DOWN)
+
     # Use the smaller of the requested quantity or maximum possible trade
-    requested_quantity = Decimal(trading_config['quantity'])
+    requested_quantity = Decimal(trading_config['quantity']).normalize()
     safe_quantity = min(requested_quantity, max_base_trade, max_quote_trade)
     
     if safe_quantity < requested_quantity:
-        print(f"⚠️  Reducing trade quantity from {requested_quantity} to {safe_quantity} due to balance constraints")
+        print(f"⚠️  Reducing trade quantity from {requested_quantity:.8f} to {safe_quantity:.8f} due to balance constraints")
         if safe_quantity == 0:
             print("❌ Insufficient balance to trade")
             return

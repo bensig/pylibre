@@ -96,24 +96,137 @@ class DexClient:
         Args:
             account (str): The account cancelling the order.
             order_id (int): ID of the order to cancel.
-            quote_symbol (str): Base token symbol (e.g., BTC).
-            base_symbol (str): Quote token symbol (e.g., LIBRE).
+            quote_symbol (str): Quote token symbol (e.g., BTC).
+            base_symbol (str): Base token symbol (e.g., LIBRE).
             contract (str): The DEX contract name (default: "dex.libre").
 
         Returns:
             dict: Result of the transaction.
         """
-        # Create pair string by combining quote and base symbols in lowercase
-        pair = f"{base_symbol.lower()}{quote_symbol.lower()}"
+        try:
+            # Create pair string by combining base and quote symbols in lowercase
+            pair = f"{base_symbol.lower()}{quote_symbol.lower()}"
+            
+            print(f"🔍 Debug - Cancel Order:")
+            print(f"  Pair: {pair}")
+            print(f"  Order ID: {order_id}")
+            print(f"  Account: {account}")
+            
+            data = {
+                "orderIdentifier": order_id,
+                "pair": pair
+            }
+            
+            print(f"  Action Data: {data}")
+            
+            return self.client.execute_action(
+                contract=contract,
+                action_name="cancelorder",
+                data=data,
+                actor=account
+            )
+        except Exception as e:
+            print(f"❌ Error in cancel_order: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+    def cancel_all_orders(self, account, quote_symbol, base_symbol, contract="dex.libre"):
+        """
+        Cancel all orders for a specific trading pair.
+
+        Args:
+            account (str): The account cancelling the orders
+            quote_symbol (str): Quote token symbol (e.g., USDT)
+            base_symbol (str): Base token symbol (e.g., BTC)
+            contract (str): DEX contract name (default: "dex.libre")
+
+        Returns:
+            dict: Summary of cancellation results
+        """
+        print(f"\n🔍 Fetching order book for {base_symbol}/{quote_symbol}...")
+        order_book = self.fetch_order_book(quote_symbol=quote_symbol, base_symbol=base_symbol)
+
+        results = []
         
-        data = {
-            "orderIdentifier": order_id,
-            "pair": pair
+        # Cancel all bids
+        print("\nProcessing BIDS:")
+        for bid in order_book["bids"]:
+            if bid["account"] == account:
+                print(f"🚫 Cancelling bid order with identifier: {bid['identifier']}")
+                try:
+                    cancel_result = self.cancel_order(
+                        account=account,
+                        order_id=bid['identifier'],
+                        quote_symbol=quote_symbol,
+                        base_symbol=base_symbol
+                    )
+                    success = cancel_result.get("success", False)
+                    results.append({
+                        "order_id": bid['identifier'],
+                        "type": "bid",
+                        "price": bid.get('price'),
+                        "success": success,
+                        "error": cancel_result.get("error") if not success else None
+                    })
+                    print("✅ Bid cancelled" if success else f"❌ Failed to cancel bid: {cancel_result.get('error')}")
+                except Exception as e:
+                    print(f"❌ Error cancelling bid: {str(e)}")
+                    results.append({
+                        "order_id": bid['identifier'],
+                        "type": "bid",
+                        "price": bid.get('price'),
+                        "success": False,
+                        "error": str(e)
+                    })
+
+        # Cancel all offers
+        print("\nProcessing OFFERS:")
+        for offer in order_book["offers"]:
+            if offer["account"] == account:
+                print(f"🚫 Cancelling sell order with identifier: {offer['identifier']}")
+                try:
+                    cancel_result = self.cancel_order(
+                        account=account,
+                        order_id=offer['identifier'],
+                        quote_symbol=quote_symbol,
+                        base_symbol=base_symbol
+                    )
+                    success = cancel_result.get("success", False)
+                    results.append({
+                        "order_id": offer['identifier'],
+                        "type": "offer",
+                        "price": offer.get('price'),
+                        "success": success,
+                        "error": cancel_result.get("error") if not success else None
+                    })
+                    print("✅ Offer cancelled" if success else f"❌ Failed to cancel offer: {cancel_result.get('error')}")
+                except Exception as e:
+                    print(f"❌ Error cancelling offer: {str(e)}")
+                    results.append({
+                        "order_id": offer['identifier'],
+                        "type": "offer",
+                        "price": offer.get('price'),
+                        "success": False,
+                        "error": str(e)
+                    })
+
+        # Summarize results
+        successful = sum(1 for r in results if r["success"])
+        failed = len(results) - successful
+        
+        summary = {
+            "success": True,
+            "summary": f"Cancelled {successful} orders, {failed} failed",
+            "total_orders": len(results),
+            "successful": successful,
+            "failed": failed,
+            "details": results
         }
         
-        return self.client.execute_action(
-            contract=contract,
-            action_name="cancelorder",
-            data=data,
-            actor=account
-        )
+        print(f"\n📊 Summary: {summary['summary']}")
+        if failed > 0:
+            print("\nFailed orders:")
+            for result in results:
+                if not result["success"]:
+                    print(f"- Order {result['order_id']} ({result['type']}): {result['error']}")
+        
+        return summary
