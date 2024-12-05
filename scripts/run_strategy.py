@@ -1,6 +1,7 @@
 from pylibre import LibreClient
 from pylibre.manager.account_manager import AccountManager
 from pylibre.strategies.random_walk import RandomWalkStrategy
+from pylibre.strategies.market_rate import MarketRateStrategy
 from decimal import Decimal, ROUND_DOWN
 import argparse
 import sys
@@ -30,15 +31,28 @@ def main():
     account_config = account_manager.get_account_config(args.account)
     trading_config = account_manager.get_trading_config(args.account, args.strategy)
     
-    # Add required configuration
-    trading_config.update({
+    # Add required configuration with defaults
+    default_config = {
         'current_price': Decimal(args.price),
         'min_change_percentage': Decimal('0.01'),   # 1%
         'max_change_percentage': Decimal('0.20'),   # 20%
         'spread_percentage': Decimal('0.02'),       # 2%
         'quantity': '100.00000000',                # Amount per order
         'interval': 5                              # Seconds between iterations
-    })
+    }
+
+    # Update with defaults only if not already in trading_config
+    for key, value in default_config.items():
+        if key not in trading_config:
+            trading_config[key] = value
+        else:
+            # Convert numeric values to appropriate types
+            if key in ['min_change_percentage', 'max_change_percentage', 'spread_percentage']:
+                trading_config[key] = Decimal(str(trading_config[key]))
+            elif key == 'quantity':
+                trading_config[key] = str(trading_config[key])  # Ensure quantity is string
+            elif key == 'interval':
+                trading_config[key] = int(trading_config[key])  # Ensure interval is integer
 
     # Initialize client and unlock wallet
     client = LibreClient("https://testnet.libre.org")
@@ -102,6 +116,15 @@ def main():
     # Initialize and run strategy
     if args.strategy == "RandomWalkStrategy":
         strategy = RandomWalkStrategy(
+            client=client,
+            account=args.account,
+            quote_symbol=args.quote,
+            base_symbol=args.base,
+            config=trading_config
+        )
+        strategy.run()
+    elif args.strategy == "MarketRateStrategy":
+        strategy = MarketRateStrategy(
             client=client,
             account=args.account,
             quote_symbol=args.quote,

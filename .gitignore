@@ -55,3 +55,4 @@ logs/
 # PyLibre
 .pycache/
 TODO.md
+credentials.json

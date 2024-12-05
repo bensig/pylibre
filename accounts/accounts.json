@@ -4,7 +4,8 @@
         "wallet_password_file": "bentester_wallet.pwd",
         "allowed_strategies": [
             "RandomWalkStrategy",
-            "MeanReversionStrategy"
+            "MeanReversionStrategy",
+            "MarketRateStrategy"
         ],
         "allowed_pairs": [
             "LIBRE/BTC",
@@ -15,7 +16,7 @@
             "quantity": "100.00000000",
             "min_change_percentage": 0.01,
             "max_change_percentage": 0.20,
-            "spread_percentage": 0.02
+            "spread_percentage": 0.005
         },
         "strategy_settings": {
             "RandomWalkStrategy": {
