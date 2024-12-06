@@ -54,7 +54,7 @@
         },
         "strategy_settings": {
             "RandomWalkStrategy": {
-                "interval": 15,
+                "interval": 2,
                 "quantity": "150.00000000",
                 "min_change_percentage": 0.21,
                 "max_change_percentage": 0.50,
