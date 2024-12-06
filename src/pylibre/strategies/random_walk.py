@@ -33,50 +33,56 @@ class RandomWalkStrategy(BaseStrategy):
         try:
             current_price = signal['price']
             spread = signal['spread_percentage']
+            num_orders = self.config.get('num_orders', 1)
+            spacing = self.config.get('order_spacing', 'linear')
             
-            # Calculate bid and ask prices
-            bid_price = current_price * (Decimal('1') - spread/Decimal('2'))
-            ask_price = current_price * (Decimal('1') + spread/Decimal('2'))
+            # Calculate price ranges
+            min_price = current_price * (Decimal('1') - self.config['max_change_percentage'])
+            max_price = current_price * (Decimal('1') + self.config['max_change_percentage'])
             
-            print(f"\n📊 New price: {current_price:.10f} {self.quote_symbol}")
-            print(f"Movement: {signal['movement_percentage']:+.3f}%")
-            print(f"Bid: {bid_price:.10f} {self.quote_symbol}")
-            print(f"Ask: {ask_price:.10f} {self.quote_symbol}")
-
-            # Place bid
-            quantity = self.config.get('quantity', '100.00000000')
-            print(f"\n💸 Placing bid for {quantity} {self.base_symbol}")
-            bid_result = self.dex.place_order(
-                account=self.account,
-                order_type="buy",
-                quantity=quantity,
-                price=f"{bid_price:.10f}",
-                quote_symbol=self.quote_symbol,
-                base_symbol=self.base_symbol
-            )
+            # Calculate order quantities
+            total_quantity = Decimal(self.config.get('quantity', '100.00000000'))
+            if self.config.get('quantity_distribution', 'equal') == 'equal':
+                quantities = [total_quantity / num_orders] * num_orders
             
-            if not bid_result.get("success"):
-                print(f"❌ Bid order failed: {bid_result.get('error', 'Unknown error')}")
-                return False
+            # Generate price points
+            price_step = (max_price - min_price) / (num_orders + 1)
             
-            print(f"✅ Bid placed successfully: {bid_result['data']['transaction_id']}")
-            
-            # Place ask
-            print(f"💰 Placing ask for {quantity} {self.base_symbol}")
-            ask_result = self.dex.place_order(
-                account=self.account,
-                order_type="sell",
-                quantity=quantity,
-                price=f"{ask_price:.10f}",
-                quote_symbol=self.quote_symbol,
-                base_symbol=self.base_symbol
-            )
-            
-            if not ask_result.get("success"):
-                print(f"❌ Ask order failed: {ask_result.get('error', 'Unknown error')}")
-                return False
-            
-            print(f"✅ Ask placed successfully: {ask_result['data']['transaction_id']}")
+            # Place multiple bids and asks
+            for i in range(num_orders):
+                # Calculate prices based on spacing method
+                if spacing == 'linear':
+                    bid_price = min_price + (price_step * (i + 1))
+                    ask_price = max_price - (price_step * (i + 1))
+                
+                quantity = str(quantities[i])
+                print(f"\n💸 Placing bid #{i+1} for {quantity} {self.base_symbol} at {bid_price:.10f}")
+                bid_result = self.dex.place_order(
+                    account=self.account,
+                    order_type="buy",
+                    quantity=quantity,
+                    price=f"{bid_price:.10f}",
+                    quote_symbol=self.quote_symbol,
+                    base_symbol=self.base_symbol
+                )
+                
+                if not bid_result.get("success"):
+                    print(f"❌ Bid order #{i+1} failed: {bid_result.get('error', 'Unknown error')}")
+                    continue
+                
+                print(f"\n💰 Placing ask #{i+1} for {quantity} {self.base_symbol} at {ask_price:.10f}")
+                ask_result = self.dex.place_order(
+                    account=self.account,
+                    order_type="sell",
+                    quantity=quantity,
+                    price=f"{ask_price:.10f}",
+                    quote_symbol=self.quote_symbol,
+                    base_symbol=self.base_symbol
+                )
+                
+                if not ask_result.get("success"):
+                    print(f"❌ Ask order #{i+1} failed: {ask_result.get('error', 'Unknown error')}")
+                    continue
             
             return True
             

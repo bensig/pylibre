@@ -38,7 +38,10 @@ def main():
         'max_change_percentage': Decimal('0.20'),   # 20%
         'spread_percentage': Decimal('0.02'),       # 2%
         'quantity': '100.00000000',                # Amount per order
-        'interval': 5                              # Seconds between iterations
+        'interval': 5,                              # Seconds between iterations
+        'num_orders': 1,                         # Default to 1 order per side
+        'quantity_distribution': 'equal',        # Default distribution method
+        'order_spacing': 'linear'               # Default spacing method
     }
 
     # Update with defaults only if not already in trading_config
