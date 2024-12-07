@@ -28,9 +28,11 @@ class RandomWalkStrategy(BaseStrategy):
 
     def place_orders(self, signal: Dict[str, Any]) -> bool:
         """Place orders using base class distributed order placement."""
+        spread = signal['spread_percentage']
         return self.place_distributed_orders(
             base_price=signal['price'],
-            spread=signal['spread_percentage']
+            min_spread=spread,
+            max_spread=spread
         )
 
     def cancel_orders(self) -> bool:

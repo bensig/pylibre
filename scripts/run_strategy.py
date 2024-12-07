@@ -2,6 +2,7 @@ from pylibre import LibreClient
 from pylibre.manager.account_manager import AccountManager
 from pylibre.strategies.random_walk import RandomWalkStrategy
 from pylibre.strategies.market_rate import MarketRateStrategy
+from pylibre.strategies.order_book_maker import OrderBookMakerStrategy
 from decimal import Decimal, ROUND_DOWN
 import argparse
 import sys
@@ -39,7 +40,7 @@ def main():
         'spread_percentage': Decimal('0.02'),       # 2%
         'quantity': '100.00000000',                # Amount per order
         'interval': 5,                              # Seconds between iterations
-        'num_orders': 1,                         # Default to 1 order per side
+        'num_orders': 20,                         # Default to 20 orders
         'quantity_distribution': 'equal',        # Default distribution method
         'order_spacing': 'linear'               # Default spacing method
     }
@@ -128,6 +129,15 @@ def main():
         strategy.run()
     elif args.strategy == "MarketRateStrategy":
         strategy = MarketRateStrategy(
+            client=client,
+            account=args.account,
+            quote_symbol=args.quote,
+            base_symbol=args.base,
+            config=trading_config
+        )
+        strategy.run()
+    elif args.strategy == "OrderBookMakerStrategy":
+        strategy = OrderBookMakerStrategy(
             client=client,
             account=args.account,
             quote_symbol=args.quote,

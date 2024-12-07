@@ -4,7 +4,7 @@ from pylibre import LibreClient
 from pylibre.dex import DexClient
 import random
 import time
-from decimal import Decimal
+from decimal import Decimal, ROUND_DOWN
 
 class BaseStrategy(ABC):
     def __init__(self, 
@@ -100,18 +100,21 @@ class BaseStrategy(ABC):
         print(f"🚀 Starting {self.__class__.__name__} for {self.base_symbol}/{self.quote_symbol}")
         
         try:
+            # Initial order placement to fill the book
+            signal = self.generate_signal()
+            self.place_orders(signal)
+            
             while self.is_running:
                 # Generate trading signal
                 signal = self.generate_signal()
                 
-                # Cancel existing orders
-                self.cancel_orders()
+                # Randomly select and cancel 1-2 orders
+                self.cancel_random_orders()
                 
-                # Place new orders
-                self.place_orders(signal)
+                # Place new orders to replace cancelled ones
+                self.place_replacement_orders(signal)
                 
                 # Wait for next iteration
-                import time
                 time.sleep(self.config.get('interval', 5))
                 
         except KeyboardInterrupt:
@@ -127,87 +130,75 @@ class BaseStrategy(ABC):
         self.cancel_orders()
         self.is_running = False 
 
-    def place_distributed_orders(self, base_price: Decimal, spread: Decimal) -> bool:
+    def place_distributed_orders(self, base_price: Decimal, min_spread: Decimal, max_spread: Decimal) -> bool:
         """
         Place multiple orders with configurable distribution and spacing.
         """
         try:
-            num_orders = max(2, self.config.get('num_orders', 2))  # Ensure at least 2 orders
-            if num_orders % 2 != 0:  # Make sure it's even
-                num_orders += 1
+            num_orders = 20  # Fixed at 20 orders (10 per side)
             
-            spacing = self.config.get('order_spacing', 'linear')
+            # Calculate available balance and reserve 20% for ongoing trading
+            total_balance = self._get_available_balance()
+            trading_reserve = total_balance * Decimal('0.2')  # Keep 20% in reserve
+            initial_order_balance = total_balance * Decimal('0.8')  # Use 80% for initial orders
             
-            # Calculate price ranges with some randomization
-            max_spread = self.config.get('max_change_percentage', spread * Decimal('2'))
-            min_price = base_price * (Decimal('1') - max_spread)
-            max_price = base_price * (Decimal('1') + max_spread)
-            
-            # Calculate order quantities with randomization
-            total_quantity = Decimal(self.config.get('quantity', '100.00000000'))
-            # Ensure we don't exceed available balance
-            total_quantity = min(
-                total_quantity,
-                Decimal(str(self._get_available_balance()))
+            # Calculate per-order quantity
+            per_order_quantity = (initial_order_balance / Decimal(str(num_orders))).quantize(
+                Decimal('0.00000001'), rounding=ROUND_DOWN
             )
             
-            if total_quantity <= 0:
-                print("❌ Insufficient balance for trading")
+            if per_order_quantity < Decimal('0.00000100'):
+                print("❌ Insufficient balance for minimum order size")
                 return False
-                
-            # Split total quantity between buys and sells
-            orders_per_side = num_orders // 2  # This will now never be zero
-            per_side_quantity = total_quantity / Decimal('2')
-            buy_quantities = self._distribute_quantities(per_side_quantity, orders_per_side)
-            sell_quantities = self._distribute_quantities(per_side_quantity, orders_per_side)
             
-            # Track successful orders
+            # Calculate spread step size
+            spread_range = max_spread - min_spread
+            spread_step = spread_range / Decimal('10')  # 10 steps for each side
+            
             successful_orders = []
             
-            # Place buy orders
-            for i, quantity in enumerate(buy_quantities):
-                time.sleep(random.uniform(0.5, 1.5))
+            # Place buy orders (10 orders below base price)
+            for i in range(10):
+                time.sleep(random.uniform(0.5, 1.0))
+                spread = min_spread + (spread_step * Decimal(str(i)))
                 
-                if spacing == 'linear':
-                    price_step = (base_price - min_price) / (len(buy_quantities) + 1)
-                    base_price_point = min_price + (price_step * (i + 1))
-                    # Add smaller random variation (±0.1%)
-                    variation = Decimal(str(random.uniform(-0.001, 0.001)))
-                    price = base_price_point * (Decimal('1') + variation)
+                # Add small random variation to spread (±10% of step size)
+                variation = Decimal(str(random.uniform(-0.1, 0.1))) * spread_step
+                final_spread = spread + variation
                 
-                # Ensure minimum quantity
-                if quantity < Decimal('0.00000100'):
-                    continue
-                    
+                price = base_price * (Decimal('1') - final_spread)
+                
+                # Add small random variation to quantity (±5%)
+                quantity = per_order_quantity * Decimal(str(random.uniform(0.95, 1.05)))
                 quantity_str = f"{quantity:.8f}"
+                
                 success = self._place_single_order("buy", quantity_str, price, i)
                 if success:
                     successful_orders.append(i)
             
-            # Place sell orders
-            for i, quantity in enumerate(sell_quantities):
-                time.sleep(random.uniform(0.5, 1.5))
+            # Place sell orders (10 orders above base price)
+            for i in range(10):
+                time.sleep(random.uniform(0.5, 1.0))
+                spread = min_spread + (spread_step * Decimal(str(i)))
                 
-                if spacing == 'linear':
-                    price_step = (max_price - base_price) / (len(sell_quantities) + 1)
-                    base_price_point = base_price + (price_step * (i + 1))
-                    # Add smaller random variation (±0.1%)
-                    variation = Decimal(str(random.uniform(-0.001, 0.001)))
-                    price = base_price_point * (Decimal('1') + variation)
+                # Add small random variation to spread (±10% of step size)
+                variation = Decimal(str(random.uniform(-0.1, 0.1))) * spread_step
+                final_spread = spread + variation
                 
-                # Ensure minimum quantity
-                if quantity < Decimal('0.00000100'):
-                    continue
-                    
+                price = base_price * (Decimal('1') + final_spread)
+                
+                # Add small random variation to quantity (±5%)
+                quantity = per_order_quantity * Decimal(str(random.uniform(0.95, 1.05)))
                 quantity_str = f"{quantity:.8f}"
-                success = self._place_single_order("sell", quantity_str, price, i + len(buy_quantities))
+                
+                success = self._place_single_order("sell", quantity_str, price, i + 10)
                 if success:
-                    successful_orders.append(i + len(buy_quantities))
+                    successful_orders.append(i + 10)
             
             return len(successful_orders) > 0
             
         except Exception as e:
-            print(f"❌ Error placing distributed orders: {str(e)}")  # Added str() for better error messages
+            print(f"❌ Error placing distributed orders: {str(e)}")
             return False
 
     def _get_available_balance(self) -> Decimal:
@@ -294,3 +285,64 @@ class BaseStrategy(ABC):
             if not result.get("success"):
                 print(f"❌ {order_type.title()} order #{order_num+1} failed: "
                       f"{result.get('error', 'Unknown error')}") 
+
+    def cancel_random_orders(self) -> None:
+        """Cancel a random selection of existing orders."""
+        try:
+            order_book = self.dex.fetch_order_book(
+                quote_symbol=self.quote_symbol,
+                base_symbol=self.base_symbol
+            )
+            
+            our_bids = [order for order in order_book["bids"] 
+                       if order["account"] == self.account]
+            our_offers = [order for order in order_book["offers"] 
+                         if order["account"] == self.account]
+            
+            # Only cancel 1 order at a time for more gradual changes
+            if our_bids + our_offers:
+                order_to_cancel = random.choice(our_bids + our_offers)
+                self.dex.cancel_order(
+                    account=self.account,
+                    order_id=order_to_cancel['identifier'],
+                    quote_symbol=self.quote_symbol,
+                    base_symbol=self.base_symbol
+                )
+                print(f"🗑️  Cancelled order at price {order_to_cancel['price']}")
+                
+        except Exception as e:
+            print(f"Error cancelling random orders: {e}")
+
+    def place_replacement_orders(self, signal: Dict[str, Any]) -> bool:
+        """Place a single new order to replace the cancelled one."""
+        try:
+            base_price = signal['price']
+            min_spread = signal['min_spread']
+            max_spread = signal['max_spread']
+            
+            # Calculate available balance including reserve
+            available_balance = self._get_available_balance()
+            per_order_quantity = (available_balance / Decimal('20')).quantize(
+                Decimal('0.00000001'), rounding=ROUND_DOWN
+            )
+            
+            # Randomly choose buy or sell
+            order_type = random.choice(['buy', 'sell'])
+            
+            # Calculate price with some randomization
+            direction = 1 if order_type == 'sell' else -1
+            spread = Decimal(str(random.uniform(
+                float(min_spread),
+                float(max_spread)
+            )))
+            price = base_price * (Decimal('1') + (direction * spread))
+            
+            # Calculate quantity with some randomization (±5%)
+            quantity = per_order_quantity * Decimal(str(random.uniform(0.95, 1.05)))
+            quantity_str = f"{quantity:.8f}"
+            
+            return self._place_single_order(order_type, quantity_str, price, 0)
+            
+        except Exception as e:
+            print(f"Error placing replacement order: {e}")
+            return False

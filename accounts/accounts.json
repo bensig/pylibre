@@ -3,8 +3,6 @@
         "wallet_name": "bentester",
         "wallet_password_file": "bentester_wallet.pwd",
         "allowed_strategies": [
-            "RandomWalkStrategy",
-            "MeanReversionStrategy",
             "MarketRateStrategy"
         ],
         "allowed_pairs": [
@@ -13,60 +11,27 @@
         ],
         "default_settings": {
             "interval": 5,
-            "quantity": "100.00000000",
-            "min_change_percentage": 0.01,
-            "max_change_percentage": 0.20,
-            "spread_percentage": 0.005
-        },
-        "strategy_settings": {
-            "RandomWalkStrategy": {
-                "interval": 5,
-                "quantity": "100.00000000"
-            },
-            "MeanReversionStrategy": {
-                "interval": 60,
-                "window_size": 20,
-                "deviation_threshold": 2.0
-            }
+            "min_spread_percentage": 0.001,
+            "max_spread_percentage": 0.005
         }
     },
     "bentest3": {
         "wallet_name": "bentest3",
         "wallet_password_file": "bentest3_wallet.pwd",
         "allowed_strategies": [
-            "RandomWalkStrategy",
-            "MeanReversionStrategy",
-            "MarketRateStrategy"
+            "OrderBookMakerStrategy"
         ],
         "allowed_pairs": [
             "LIBRE/BTC",
             "BTC/USDT"
         ],
         "default_settings": {
-            "interval": 15,
-            "quantity": "150.00000000",
-            "min_change_percentage": 0.21,
-            "max_change_percentage": 0.50,
-            "spread_percentage": 0.01,
-            "num_orders": 3,
+            "interval": 2,
+            "min_spread_percentage": 0.006,
+            "max_spread_percentage": 0.01,
+            "num_orders": 20,
             "quantity_distribution": "equal",
             "order_spacing": "linear"
-        },
-        "strategy_settings": {
-            "RandomWalkStrategy": {
-                "interval": 2,
-                "quantity": "150.00000000",
-                "min_change_percentage": 0.21,
-                "max_change_percentage": 0.50,
-                "num_orders": 3,
-                "quantity_distribution": "equal",
-                "order_spacing": "linear"
-            },
-            "MeanReversionStrategy": {
-                "interval": 60,
-                "window_size": 20,
-                "deviation_threshold": 2.0
-            }
         }
     }
 } 
