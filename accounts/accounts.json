@@ -3,6 +3,7 @@
         "wallet_name": "bentester",
         "wallet_password_file": "bentester_wallet.pwd",
         "allowed_strategies": [
+            "OrderBookMakerStrategy",
             "MarketRateStrategy"
         ],
         "allowed_pairs": [
@@ -10,7 +11,7 @@
             "BTC/USDT"
         ],
         "default_settings": {
-            "interval": 5,
+            "interval": 2,
             "min_spread_percentage": 0.001,
             "max_spread_percentage": 0.005
         }
@@ -26,7 +27,7 @@
             "BTC/USDT"
         ],
         "default_settings": {
-            "interval": 2,
+            "interval": 1,
             "min_spread_percentage": 0.006,
             "max_spread_percentage": 0.01,
             "num_orders": 20,

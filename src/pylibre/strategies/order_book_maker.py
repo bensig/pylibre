@@ -108,8 +108,8 @@ class OrderBookMakerStrategy(BaseStrategy):
             )
             
             if our_orders:
-                # Randomly cancel 2-4 orders for more frequent updates
-                num_to_cancel = random.randint(2, 4)
+                # Increase the number of orders to cancel/replace each cycle
+                num_to_cancel = random.randint(3, 6)  # Was 2-4
                 orders_to_cancel = random.sample(our_orders, min(num_to_cancel, len(our_orders)))
                 
                 for order in orders_to_cancel:
@@ -120,29 +120,25 @@ class OrderBookMakerStrategy(BaseStrategy):
                         base_symbol=self.base_symbol
                     )
                     print(f"🗑️  Cancelled order at price {order['price']}")
-                    time.sleep(random.uniform(0.5, 1.0))
+                    # Reduce sleep time between cancels
+                    time.sleep(random.uniform(0.2, 0.4))  # Was 0.5, 1.0
                 
                 # Place replacement orders
                 for _ in range(len(orders_to_cancel)):
-                    # Calculate random spread within our range
                     spread = Decimal(str(random.uniform(
                         float(signal['min_spread']),
                         float(signal['max_spread'])
-                    )))
+                     )))
                     
-                    # Randomly choose buy or sell
                     order_type = random.choice(['buy', 'sell'])
                     direction = Decimal('-1') if order_type == 'buy' else Decimal('1')
                     
-                    # Calculate price
                     price = signal['price'] * (Decimal('1') + (direction * spread))
                     
-                    # Calculate quantity
                     total_balance = self._get_available_balance()
                     quantity = (total_balance / Decimal('20')).quantize(
                         Decimal('0.00000001'), rounding=ROUND_DOWN
                     )
-                    # Add small random variation to quantity (±5%)
                     quantity = quantity * Decimal(str(random.uniform(0.95, 1.05)))
                     quantity_str = f"{quantity:.8f}"
                     
@@ -150,7 +146,8 @@ class OrderBookMakerStrategy(BaseStrategy):
                     if success:
                         print(f"📝 Placed new {order_type} order at {price:.8f}")
                     
-                    time.sleep(random.uniform(0.5, 1.0))
+                    # Reduce sleep time between placements
+                    time.sleep(random.uniform(0.2, 0.4))  # Was 0.5, 1.0
             
             return True
             

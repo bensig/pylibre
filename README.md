@@ -69,6 +69,24 @@ Create an `accounts/accounts.json` file to configure trading accounts:
 }
 ```
 
+### Credentials Setup
+
+Create a `credentials.json` file in the root directory:
+
+```json
+{
+    "ip_api_key": "your_ip_api_key_here",
+    "binance": {
+        "api_key": "your_binance_api_key",
+        "api_secret": "your_binance_api_secret"
+    }
+}
+```
+
+This file is required for:
+- Checking IP address location to ensure non-US trading compliance
+- Accessing Binance API for price comparisons and market data
+
 ### Environment Setup
 
 Create a `.env.testnet` or `.env.mainnet` file:
