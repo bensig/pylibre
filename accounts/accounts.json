@@ -1,7 +1,7 @@
 {
-    "bentester": {
-        "wallet_name": "bentester",
-        "wallet_password_file": "bentester_wallet.pwd",
+    "dextester": {
+        "wallet_name": "dextester",
+        "wallet_password_file": "dextester_wallet.pwd",
         "allowed_strategies": [
             "OrderBookMakerStrategy",
             "MarketRateStrategy"
@@ -16,9 +16,9 @@
             "max_spread_percentage": 0.005
         }
     },
-    "bentest3": {
-        "wallet_name": "bentest3",
-        "wallet_password_file": "bentest3_wallet.pwd",
+    "dextrader": {
+        "wallet_name": "dextrader",
+        "wallet_password_file": "dextrader_wallet.pwd",
         "allowed_strategies": [
             "OrderBookMakerStrategy"
         ],
