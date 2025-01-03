@@ -14,26 +14,10 @@ Examples:
     # Global options (--api-url, --env-file) must come BEFORE the command
     
     # Get token balance
-    pylibre --api-url https://lb.libre.org balance usdt.libre bentester USDT
+    pylibre --env-file .env.testnet balance usdt.libre bentester USDT
     
     # Get table data with filtering
-    pylibre --api-url https://lb.libre.org table farm.libre account BTCUSD --lower-bound cesarcv --upper-bound cesarcv
-    
-    # Get all rows from a table
-    pylibre --api-url https://lb.libre.org table-all stake.libre stake stake.libre
-    
-    # Execute contract action
-    pylibre --api-url https://lb.libre.org execute reward.libre updateall bentester '{"max_steps":"500"}'
-    
-    # Transfer tokens (auto-detecting contract)
-    pylibre --api-url https://lb.libre.org transfer bentester bentest3 "1.00000000 USDT" "memo"
-    
-    # Transfer tokens (with explicit contract)
-    pylibre --api-url https://testnet.libre.org transfer --contract usdt.libre bentester bentest3 "1.00000000 USDT" "memo"
-
-Note: 
-    For testnet operations: --api-url https://testnet.libre.org
-    For mainnet operations: --api-url https://lb.libre.org
+    pylibre --env-file .env.testnet table farm.libre account BTCUSD --lower-bound cesarcv
     """
     )
 
@@ -41,9 +25,11 @@ Note:
     parser.add_argument('--env-file', default='.env.testnet', 
                        help='Environment file path (default: .env.testnet)')
     parser.add_argument('--api-url', 
-                       help='API URL (e.g., https://testnet.libre.org) - overrides API_URL from env file')
+                       help='API URL (e.g., https://testnet.libre.org)')
     parser.add_argument('--unlock', action='store_true',
-                       help='Unlock wallet for the account (requires password file in .env)')
+                       help='Unlock wallet for the account')
+    parser.add_argument('--verbose', '-v', action='store_true',
+                       help='Enable verbose output')
 
     subparsers = parser.add_subparsers(dest='command', help='Available commands')
 
@@ -139,9 +125,9 @@ Note:
         
         Examples:
           # Transfer with auto-detected contract
-          pylibre transfer bentester bentest3 "1.00000000 USDT" "memo"
+          pylibre transfer bentester bentest3 "1.00000000 USDT"
           
-          # Transfer with explicit contract
+          # Transfer with explicit contract and memo
           pylibre transfer --contract usdt.libre bentester bentest3 "1.00000000 USDT" "memo"
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter
@@ -149,19 +135,10 @@ Note:
     transfer_parser.add_argument('from_account', help='Sender account')
     transfer_parser.add_argument('to_account', help='Recipient account')
     transfer_parser.add_argument('quantity', help='Amount with symbol (e.g., "1.00000000 USDT")')
-    transfer_parser.add_argument('memo', help='Transfer memo')
+    transfer_parser.add_argument('memo', nargs='?', default="", help='Transfer memo (optional)')
     transfer_parser.add_argument('--contract', help='Token contract (optional for USDT/BTC/LIBRE)')
 
     return parser
-
-def unlock_wallet_if_needed(client, args, account):
-    """Helper function to unlock wallet if needed"""
-    if args.unlock:
-        result = client.unlock_wallet(account, f"{account}_wallet.pwd")
-        if not result.get('success'):
-            print(f"Error unlocking wallet: {result.get('error')}")
-            return False
-    return True
 
 def print_usage():
     """Print usage information for the PyLibre CLI tool."""
@@ -205,6 +182,8 @@ def main():
         args = parser.parse_args()
         
         # Load environment variables
+        if args.verbose:
+            print(f"Loading environment from: {args.env_file}")
         load_dotenv(args.env_file)
         
         # Initialize client with API URL from args or environment
@@ -216,7 +195,10 @@ def main():
             }))
             return 1
             
-        client = LibreClient(api_url=api_url)
+        client = LibreClient(api_url=api_url, verbose=args.verbose)
+        if args.verbose:
+            print(f"Loading account keys from: {args.env_file}")
+        client.load_account_keys(args.env_file)
 
         # Handle different commands
         if args.command == 'table':
@@ -242,10 +224,7 @@ def main():
             )
             print(json.dumps(result))
             
-        elif args.command == 'transfer':
-            if args.unlock and not unlock_wallet_if_needed(client, args, args.from_account):
-                return 1
-                
+        elif args.command == 'transfer':                
             result = client.transfer(
                 from_account=args.from_account,
                 to_account=args.to_account,
@@ -264,10 +243,7 @@ def main():
             )
             print(json.dumps(result))
             
-        elif args.command == 'execute':
-            if args.unlock and not unlock_wallet_if_needed(client, args, args.actor):
-                return 1
-                
+        elif args.command == 'execute':                
             result = client.execute_action(
                 contract=args.contract,
                 action_name=args.action,

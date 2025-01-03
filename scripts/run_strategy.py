@@ -60,16 +60,6 @@ def main():
 
     # Initialize client and unlock wallet
     client = LibreClient("https://testnet.libre.org")
-    wallet_result = client.unlock_wallet(
-        account_config['wallet_name'],
-        account_config['wallet_password_file']
-    )
-    
-    if not wallet_result["success"]:
-        print(f"❌ Failed to unlock wallet: {wallet_result.get('error')}")
-        return
-
-    print("🔓 Wallet unlocked successfully")
 
     # Check account balances
     base_balance = client.get_currency_balance(None, args.account, args.base)

@@ -43,8 +43,6 @@ Create an `accounts/accounts.json` file to configure trading accounts:
 ```json
 {
     "myaccount": {
-        "wallet_name": "myaccount",
-        "wallet_password_file": "myaccount_wallet.pwd",
         "allowed_strategies": [
             "RandomWalkStrategy"
         ],
@@ -98,11 +96,30 @@ API_URL=https://testnet.libre.org
 # API_URL=https://lb.libre.org
 ```
 
-### Wallet Setup
-For transactions requiring authorization, create a wallet password file:
+### Private Keys Setup
+
+Create a `.env.testnet` or `.env.mainnet` file:
 ```bash
-# Create wallet and save password
-cleos wallet create -n myaccount -f myaccount_wallet.pwd
+# API endpoint
+API_URL=https://testnet.libre.org
+
+# Account private keys (format: ACCOUNT_<uppercase_account_name>=<private_key>)
+ACCOUNT_DEXTESTER=5K...
+ACCOUNT_DEXTRADER=5J...
+```
+
+### CLI Usage
+
+Always specify the environment file when using the CLI:
+```bash
+# Basic format
+pylibre --env-file .env.testnet <command> [options]
+
+# Example transfer
+pylibre --env-file .env.testnet transfer dextester bentester "0.00001000 BTC" "memo"
+
+# Example table query
+pylibre --env-file .env.testnet table farm.libre account BTCUSD
 ```
 
 ## Usage

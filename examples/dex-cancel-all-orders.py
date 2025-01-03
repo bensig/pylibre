@@ -15,14 +15,6 @@ def main():
     client = LibreClient(args.api_url)
     dex = DexClient(client)
 
-    # Unlock wallet
-    print("\n🔐 Unlocking wallet...")
-    unlock_result = client.unlock_wallet(args.account, f"{args.account}_wallet.pwd")
-    if not unlock_result["success"]:
-        print(f"❌ Failed to unlock wallet: {unlock_result.get('error')}")
-        return
-    print("✅ Wallet unlocked successfully")
-
     # Cancel all orders for the specified pair
     result = dex.cancel_all_orders(args.account, args.quote_symbol, args.base_symbol)
     print(result)

@@ -1,124 +1,165 @@
 from pylibre import LibreClient
-from pylibre.manager.account_manager import AccountManager
 import json
 import time
 
-# Initialize client and account manager
-client = LibreClient("https://testnet.libre.org")
+# Initialize client
+client = LibreClient("https://testnet.libre.org", verbose=True)
 client.load_account_keys('.env.testnet')
-account_manager = AccountManager()
 
-# Get account config and unlock wallet
-account_config = account_manager.get_account_config("bentester")
-client.unlock_wallet(
-    account_config['wallet_name'],
-    account_config['wallet_password_file']
+# Verify private keys are loaded
+if not client.private_keys:
+    print("⚠️  No private keys loaded. Please check your .env.testnet file")
+    print("Expected format:")
+    print("ACCOUNT_DEXTESTER=5K...")
+    print("ACCOUNT_DEXTRADER=5J...")
+    exit(1)
+
+# Get the first account from loaded private keys
+test_account = next(iter(client.private_keys))
+print(f"\n🔑 Using account: {test_account}")
+
+print("\n" + "="*50)
+print("🧪 Test 1: Transfer with explicit contract")
+print("="*50)
+
+print(f"\n💰 Getting initial LIBRE balance for {test_account}")
+initial_balance = float(client.get_currency_balance(
+    contract="eosio.token",
+    account=test_account,
+    symbol="LIBRE"
+).split()[0])
+print(f"Initial Balance: {initial_balance:.4f} LIBRE")
+
+if initial_balance < 0.0001:
+    print("⚠️  Warning: Account has insufficient LIBRE balance for test")
+    exit(1)
+
+print(f"\n💸 Transferring 0.0001 LIBRE from {test_account} to dextrader (with explicit contract)")
+result = client.transfer(
+    contract="eosio.token",
+    from_account=test_account,
+    to_account="dextrader",
+    quantity="0.0001 LIBRE",
+    memo="Test with explicit contract"
 )
+print("Transfer result:", json.dumps(result, indent=2))
 
-print("\n📊 Getting table data from farm.libre contract")
-farm_data = client.get_table(
+if not result.get("success") or not result.get("data", {}).get("transaction_id"):
+    print("❌ Transfer failed or no transaction ID returned")
+    exit(1)
+
+# Wait for transaction to process
+print("\nWaiting 2 seconds for transaction to process...")
+time.sleep(2)
+
+print(f"\n💰 Getting final balance for {test_account}")
+final_balance = float(client.get_currency_balance(
+    contract="eosio.token",
+    account=test_account,
+    symbol="LIBRE"
+).split()[0])
+print(f"Final Balance: {final_balance:.4f} LIBRE")
+
+# Calculate and format the difference correctly
+difference = final_balance - initial_balance
+print(f"\n🔍 Balance difference: {difference:.4f} LIBRE")
+if abs(difference + 0.0001) < 0.00001:
+    print("✅ Test 1: Balance decreased by expected amount")
+else:
+    print("❌ Test 1: Unexpected balance difference")
+    print(f"Expected: -0.0001 LIBRE")
+    print(f"Actual: {difference:.4f} LIBRE")
+
+print("\n" + "="*50)
+print("🧪 Test 2: Transfer with auto-detected contract")
+print("="*50)
+
+print(f"\n💰 Getting initial balance for {test_account}")
+initial_balance = float(client.get_currency_balance(
+    account=test_account,
+    symbol="LIBRE"  # No contract specified - should auto-detect
+).split()[0])
+print(f"Initial Balance: {initial_balance:.4f} LIBRE")
+
+print(f"\n🔍 Auto-detecting contract for symbol LIBRE...")
+print(f"\n💸 Transferring 0.0001 LIBRE from {test_account} to dextrader (auto-detecting contract)")
+result = client.transfer(
+    from_account=test_account,
+    to_account="dextrader",
+    quantity="0.0001 LIBRE",  # No contract specified - should auto-detect eosio.token
+    memo="Test with auto-detected contract"
+)
+print("Transfer result:", json.dumps(result, indent=2))
+
+if not result.get("success") or not result.get("data", {}).get("transaction_id"):
+    print("❌ Transfer failed or no transaction ID returned")
+    exit(1)
+
+# Wait for transaction to process
+print("\nWaiting 2 seconds for transaction to process...")
+time.sleep(2)
+
+print(f"\n💰 Getting final balance for {test_account}")
+final_balance = float(client.get_currency_balance(
+    account=test_account,
+    symbol="LIBRE"  # No contract specified - should auto-detect
+).split()[0])
+print(f"Final Balance: {final_balance:.4f} LIBRE")
+
+# Calculate and format the difference correctly
+difference = final_balance - initial_balance
+print(f"\n🔍 Balance difference: {difference:.4f} LIBRE")
+if abs(difference + 0.0001) < 0.00001:
+    print("✅ Test 2: Balance decreased by expected amount")
+else:
+    print("❌ Test 2: Unexpected balance difference")
+    print(f"Expected: -0.0001 LIBRE")
+    print(f"Actual: {difference:.4f} LIBRE")
+
+print("\n" + "="*50)
+print("🧪 Test 3: Query Table Rows")
+print("="*50)
+
+print("\n📊 Getting rows from farm.libre contract")
+rows = client.get_table_rows(
     code="farm.libre",
     table="account",
-    scope="BTCUSD"
+    scope="BTCUSD",
+    limit=5  # Limit to 5 rows for example
 )
-print("Farm Data:", farm_data)
-
-print("\n💰 Getting balance for bentester")
-initial_balance = client.get_currency_balance(
-    contract="usdt.libre",
-    account="bentester",
-    symbol="USDT"
-)
-print("Initial Balance:", initial_balance)
-
-print("\n💸 Transferring 0.001 USDT from bentester to bentest3 (with explicit contract)")
-result = client.transfer(
-    contract="usdt.libre",
-    from_account="bentester",
-    to_account="bentest3",
-    quantity="0.00100000 USDT",
-    memo="Test"
-)
-print("Transfer result:", json.dumps(result, indent=2))
-
-print("\n💸 Transferring 0.001 USDT from bentester to bentest3 (auto-detecting contract)")
-result = client.transfer(
-    from_account="bentester",
-    to_account="bentest3",
-    quantity="0.00100000 USDT",  # Contract will be determined from "USDT"
-    memo="Test"
-)
-print("Transfer result:", json.dumps(result, indent=2))
-
-print("\n💰 Getting balance again for bentester - should be less by 0.001 USDT")
-print("Waiting 1 seconds for transaction to process...")
-time.sleep(1)
-
-final_balance = client.get_currency_balance(
-    contract="usdt.libre",
-    account="bentester",
-    symbol="USDT"
-)
-print("Final Balance:", final_balance)
-
-# Convert balances to float and compare
-initial_amount = float(initial_balance.split()[0])
-final_amount = float(final_balance.split()[0])
-difference = initial_amount - final_amount
-
-print(f"\n🔍 Balance difference: {difference:.8f} USDT")
-if abs(difference - 0.002) < 0.00000001:
-    print("✅ Transfer amount verified correctly")
-else:
-    print("❌ Unexpected balance difference")
+print(f"\nFirst {len(rows)} rows from farm.libre account table:")
+print(json.dumps(rows, indent=2))
 
 print("\n" + "="*50)
-print("📋 Stake Table Comparison")
+print("🧪 Test 4: Query Entire Table with Pagination")
 print("="*50)
 
-print("\n1. 📊 Testing get_table_rows with limit=1:")
-stake_data_single = client.get_table_rows(
-    code="stake.libre",
-    table="stake",
-    scope="stake.libre",
-    limit=1
-)
-print(f"\nSingle row test - rows retrieved: {len(stake_data_single)}")
-print("Single entry:", json.dumps(stake_data_single, indent=2))
-
-print("\n2. 📊 Using get_table (getting ALL rows):")
-stake_data_all = client.get_table(
+print("\n📊 Getting all rows from stake.libre contract")
+all_rows = client.get_table(
     code="stake.libre",
     table="stake",
     scope="stake.libre"
 )
-print(f"\nTotal rows retrieved: {len(stake_data_all)}")
-print("First few entries:", json.dumps(stake_data_all[:3], indent=2))
-
-print("\n3. 📑 Using get_table_rows (limited to 10 rows by default):")
-stake_data_limited = client.get_table_rows(
-    code="stake.libre",
-    table="stake",
-    scope="stake.libre"
-)
-print(f"\nTotal rows retrieved: {len(stake_data_limited)}")
-print("All entries:", json.dumps(stake_data_limited, indent=2))
+print(f"\nFound {len(all_rows)} total rows in stake.libre stake table")
+print("First 2 rows as example:")
+print(json.dumps(all_rows[:2], indent=2))
 
 print("\n" + "="*50)
-print("Single row test successful:", "✅" if len(stake_data_single) == 1 else "❌")
-print("Difference confirmed:", "✅ More rows retrieved with get_table" if len(stake_data_all) > len(stake_data_limited) else "❌ Unexpected result")
-
-print("\n" + "="*50)
-print("🔄 Contract Action Execution")
+print("🧪 Test 5: Get Currency Stats")
 print("="*50)
 
-print("\n📝 Executing updateall action on reward.libre contract:")
-action_result = client.execute_action(
-    contract="reward.libre",
-    action_name="updateall",
-    actor="bentester",
-    data={
-        "max_steps": "500"
-    }
+print("\n📊 Getting currency stats for LIBRE token")
+stats = client.get_currency_stats(
+    contract="eosio.token",
+    symbol="LIBRE"
 )
-print("Action result:", json.dumps(action_result, indent=2))
+print("\nLIBRE token stats:")
+print(json.dumps(stats, indent=2))
+
+print("\n📊 Getting currency stats for USDT token")
+stats = client.get_currency_stats(
+    contract="usdt.libre",
+    symbol="USDT"
+)
+print("\nUSDT token stats:")
+print(json.dumps(stats, indent=2))

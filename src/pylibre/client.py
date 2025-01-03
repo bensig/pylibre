@@ -1,6 +1,7 @@
+import subprocess
+from pyntelope import Net, Transaction, Action, Authorization, Data, types
 import os
 import json
-import subprocess
 from dotenv import load_dotenv
 import requests
 import sys
@@ -41,17 +42,32 @@ def extract_error_message(error_json):
         return str(error_json)
 
 class LibreClient:
-    def __init__(self, api_url):
+    def __init__(self, api_url, verbose=False):
         self.api_url = api_url
         self.private_keys = {}
+        self.net = Net(host=api_url)
+        self.verbose = verbose
 
     def load_account_keys(self, env_file='.env.testnet'):
         """Load private keys from an environment file."""
+        if self.verbose:
+            print(f"Loading environment from: {env_file}")
         load_dotenv(env_file)
+        
+        # Print all environment variables starting with ACCOUNT_
+        if self.verbose:
+            for key in os.environ:
+                if key.startswith("ACCOUNT_"):
+                    print(f"Found key: {key}")
+            
         self.private_keys = {
             key.replace("ACCOUNT_", "").lower(): os.getenv(key)
             for key in os.environ if key.startswith("ACCOUNT_")
         }
+        
+        # Print the loaded private keys (with keys masked)
+        if self.verbose:
+            print("Loaded private keys for accounts:", list(self.private_keys.keys()))
 
     def format_response(self, success, data=None, error=None):
         """Standardize response format across all methods"""
@@ -69,49 +85,54 @@ class LibreClient:
                 response["error"] = str(error)
         return response
 
-    def get_currency_balance(self, contract, account, symbol):
-        """
-        Fetch token balance for an account.
+    def get_currency_balance(self, account, symbol, contract=None):
+        """Get currency balance for an account.
         
-        Automatically handles common tokens if contract is None:
-        - "BTC": contract="btc.libre"
-        - "USDT": contract="usdt.libre"
-        - "LIBRE": contract="eosio.token"
+        Args:
+            account (str): Account name
+            symbol (str): Token symbol (e.g., "USDT", "BTC", "LIBRE")
+            contract (str, optional): Token contract. If not specified, will be auto-detected:
+                - USDT: usdt.libre
+                - BTC: btc.libre
+                - LIBRE: eosio.token
         """
         try:
-            # Define token specifications
-            TOKEN_SPECS = {
-                "BTC": {"contract": "btc.libre"},
-                "USDT": {"contract": "usdt.libre"},
-                "LIBRE": {"contract": "eosio.token"}
-            }
+            # Auto-detect contract if not specified
+            if contract is None:
+                contract_map = {
+                    "USDT": "usdt.libre",
+                    "BTC": "btc.libre",
+                    "LIBRE": "eosio.token"
+                }
+                contract = contract_map.get(symbol)
+                if not contract:
+                    raise ValueError(f"Cannot auto-detect contract for symbol: {symbol}. Please specify contract.")
             
-            # If no contract specified, try to determine from symbol
-            if contract is None and symbol in TOKEN_SPECS:
-                contract = TOKEN_SPECS[symbol]["contract"]
-            elif contract is None:
-                raise Exception(f"No contract specified for token {symbol} and no default contract known.")
+            if self.verbose:
+                print(f"Using contract: {contract} for symbol: {symbol}")
 
             response = requests.post(
                 f"{self.api_url}/v1/chain/get_currency_balance",
-                json={"code": contract, "account": account, "symbol": symbol}
+                json={
+                    "code": contract,
+                    "account": account,
+                    "symbol": symbol
+                }
             )
             response.raise_for_status()
             balances = response.json()
             
-            # API returns a list of balances
-            if not isinstance(balances, list):
-                return self.format_response(False, error="Unexpected response format from API")
-            
-            # If no balance found, return 0
-            if len(balances) == 0:
-                return f"0.00000000 {symbol}"
-            
-            # Return the first matching balance directly
-            return balances[0]
-            
-        except requests.exceptions.RequestException as e:
-            raise Exception(f"Failed to get balance: {str(e)}")
+            # Return first balance or zero balance if none found
+            if balances:
+                return balances[0]
+            else:
+                decimals = 4 if symbol == "LIBRE" else 8
+                return f"0.{'0' * decimals} {symbol}"
+
+        except Exception as e:
+            if self.verbose:
+                print(f"Error getting balance: {str(e)}")
+            raise
 
     def get_table_rows(self, code, table, scope, limit=10, lower_bound="", upper_bound="", 
                       index_position="", key_type="", reverse=False):
@@ -145,48 +166,44 @@ class LibreClient:
             raise Exception(f"Failed to get table rows: {str(e)}")
 
     def execute_action(self, contract, action_name, data, actor, permission="active"):
-        """Execute a contract action."""
+        """Execute a contract action using pyntelope."""
         try:
-            cmd = [
-                "cleos", "-u", self.api_url,
-                "push", "action", contract, action_name,
-                json.dumps(data),
-                "-p", f"{actor}@{permission}",
-                "--json",
-                "-x", "60"
+            # Convert data to pyntelope format
+            action_data = [
+                Data(name=key, value=self._convert_to_pyntelope_type(value))
+                for key, value in data.items()
             ]
-            
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-            try:
-                response = json.loads(result.stdout)
-                return self.format_response(True, data={
-                    "transaction_id": response.get("transaction_id")
-                })
-            except:
-                return self.format_response(True)
-            
-        except subprocess.CalledProcessError as e:
-            return self.format_response(False, error=e.stdout or e.stderr)
 
-    def unlock_wallet(self, wallet_name, wallet_password_file):
-        """Unlock a wallet using its password file."""
-        try:
-            # Open wallet first
-            subprocess.run(["cleos", "wallet", "open", "-n", wallet_name], 
-                          capture_output=True, check=True)
-            
-            # Unlock wallet
-            with open(wallet_password_file, "r") as f:
-                password = f.read().strip()
-            
-            unlock_cmd = ["cleos", "wallet", "unlock", "-n", wallet_name, "--password", password]
-            result = subprocess.run(unlock_cmd, capture_output=True, text=True, check=True)
-            
-            return self.format_response(True)
-        except FileNotFoundError:
-            return self.format_response(False, error=f"Wallet password file not found: {wallet_password_file}")
-        except subprocess.CalledProcessError as e:
-            return self.format_response(False, error=e.stderr.strip())
+            # Create authorization
+            auth = Authorization(actor=actor, permission=permission)
+
+            # Create action
+            action = Action(
+                account=contract,
+                name=action_name,
+                data=action_data,
+                authorization=[auth]
+            )
+
+            # Create and link transaction
+            transaction = Transaction(actions=[action])
+            linked_transaction = transaction.link(net=self.net)
+
+            # Get private key for actor
+            private_key = self.private_keys.get(actor)
+            if not private_key:
+                raise Exception(f"No private key found for account {actor}")
+
+            # Sign and send transaction
+            signed_transaction = linked_transaction.sign(key=private_key)
+            response = signed_transaction.send()
+
+            return self.format_response(True, data={
+                "transaction_id": response.get("transaction_id")
+            })
+
+        except Exception as e:
+            return self.format_response(False, error=str(e))
 
     def get_table(self, code, table, scope, index_position="", key_type=""):
         """Fetch all rows from a smart contract table by paginating through it."""
@@ -242,32 +259,11 @@ class LibreClient:
             return all_rows
 
     def transfer(self, from_account, to_account, quantity, memo="", contract=None):
-        """
-        Execute a transfer action on the blockchain.
-        
-        Automatically handles common tokens:
-        - "BTC": 8 decimals, contract="btc.libre"
-        - "USDT": 8 decimals, contract="usdt.libre"
-        - "LIBRE": 4 decimals, contract="eosio.token"
-        
-        Args:
-            from_account (str): Sender account
-            to_account (str): Recipient account
-            quantity (str): Amount with symbol (e.g., "1.00000000 USDT")
-            memo (str): Transfer memo
-            contract (str, optional): Override the default contract for the token
-        
-        Returns:
-            dict: {
-                "success": bool,
-                "transaction_id": str | None,
-                "error": str | None
-            }
-        """
+        """Execute a transfer action using pyntelope."""
         try:
             # Parse quantity to get amount and symbol
             parts = quantity.strip().split(' ')
-            if len(parts) != 2:
+            if len_parts := len(parts) != 2:
                 return self.format_response(False, 
                     error=f"Invalid quantity format. Expected 'amount SYMBOL' but got: {quantity}")
             
@@ -289,19 +285,93 @@ class LibreClient:
             elif contract is None:
                 return self.format_response(False, 
                     error=f"No contract specified for token {symbol} and no default contract known.")
-            
-            # Execute the transfer
-            return self.execute_action(
-                contract=contract,
-                action_name="transfer",
-                data={
-                    "from": from_account,
-                    "to": to_account,
-                    "quantity": quantity,
-                    "memo": memo
-                },
-                actor=from_account
+
+            # Create transfer data
+            action_data = [
+                Data(name="from", value=types.Name(from_account)),
+                Data(name="to", value=types.Name(to_account)),
+                Data(name="quantity", value=types.Asset(quantity)),
+                Data(name="memo", value=types.String(memo))
+            ]
+
+            # Create authorization
+            auth = Authorization(actor=from_account, permission="active")
+
+            # Create action
+            action = Action(
+                account=contract,
+                name="transfer",
+                data=action_data,
+                authorization=[auth]
             )
-            
+
+            # Create and link transaction
+            transaction = Transaction(actions=[action])
+            linked_transaction = transaction.link(net=self.net)
+
+            # Get private key for from_account
+            private_key = self.private_keys.get(from_account)
+            if not private_key:
+                raise Exception(f"No private key found for account {from_account}")
+
+            # Sign and send transaction
+            signed_transaction = linked_transaction.sign(key=private_key)
+            response = signed_transaction.send()
+
+            return self.format_response(True, data={
+                "transaction_id": response.get("transaction_id")
+            })
+
         except Exception as e:
+            return self.format_response(False, error=str(e))
+
+    def _convert_to_pyntelope_type(self, value):
+        """Helper method to convert Python values to pyntelope types."""
+        if isinstance(value, str):
+            if value.replace(".", "").isdigit():  # Looks like a number
+                if "." in value:
+                    return types.Float64(float(value))
+                return types.Int64(int(value))
+            if " " in value and value.split()[1] in ["USDT", "BTC", "LIBRE"]:  # Looks like an asset
+                return types.Asset(value)
+            return types.String(value)
+        if isinstance(value, int):
+            return types.Int64(value)
+        if isinstance(value, float):
+            return types.Float64(value)
+        if isinstance(value, bool):
+            return types.Bool(value)
+        if isinstance(value, dict):
+            return types.Object({k: self._convert_to_pyntelope_type(v) for k, v in value.items()})
+        if isinstance(value, list):
+            return types.Array([self._convert_to_pyntelope_type(v) for v in value])
+        return value
+
+    def get_currency_stats(self, contract, symbol):
+        """Get currency statistics for a token.
+        
+        Args:
+            contract (str): Token contract (e.g., "eosio.token", "usdt.libre")
+            symbol (str): Token symbol (e.g., "LIBRE", "USDT")
+        
+        Returns:
+            dict: Token statistics including supply, max supply, and issuer
+        """
+        try:
+            response = requests.post(
+                f"{self.api_url}/v1/chain/get_currency_stats",
+                json={
+                    "code": contract,
+                    "symbol": symbol
+                }
+            )
+            response.raise_for_status()
+            stats = response.json()
+            
+            # Return the stats for the symbol or empty dict if not found
+            return stats.get(symbol, {})
+
+        except Exception as e:
+            if self.verbose:
+                print(f"Error getting currency stats: {str(e)}")
             return self.format_response(False, error=str(e))

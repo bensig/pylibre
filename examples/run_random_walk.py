@@ -5,15 +5,7 @@ from decimal import Decimal
 def main():
     # Initialize client
     client = LibreClient("https://testnet.libre.org")
-    
-    # Unlock wallet first
-    wallet_result = client.unlock_wallet("bentester", "bentester_wallet.pwd")
-    if not wallet_result["success"]:
-        print(f"❌ Failed to unlock wallet: {wallet_result.get('error')}")
-        return
-    
-    print("🔓 Wallet unlocked successfully")
-    
+        
     # Strategy configuration
     config = {
         'current_price': Decimal('0.0000000100'),  # Starting price (100 SATS)
