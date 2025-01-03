@@ -375,3 +375,21 @@ class LibreClient:
             if self.verbose:
                 print(f"Error getting currency stats: {str(e)}")
             return self.format_response(False, error=str(e))
+
+    def push_action(self, contract: str, action: str, data: dict, account: str, permission: str = "active"):
+        """Execute any contract action using pyntelope.
+        
+        Args:
+            contract (str): Contract account name
+            action (str): Action name
+            data (dict): Action data
+            account (str): Account executing the action
+            permission (str): Permission to use (default: "active")
+        """
+        return self.execute_action(
+            contract=contract,
+            action_name=action,
+            data=data,
+            actor=account,
+            permission=permission
+        )

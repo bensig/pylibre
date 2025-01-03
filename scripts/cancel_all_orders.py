@@ -1,27 +1,38 @@
 #!/usr/bin/env python3
 import sys
-import subprocess
 from decimal import Decimal
 from pylibre.dex import DexClient
 from pylibre.client import LibreClient
+from pyntelope import Net, Transaction, Action, Authorization, Data, types
 
 def cancel_order_direct(api_url: str, account: str, order_id: int, pair: str):
-    """Cancel an order directly using cleos."""
+    """Cancel an order using LibreClient."""
     try:
-        cmd = [
-            "cleos", "-u", api_url,
-            "push", "action", "dex.libre", "cancelorder",
-            f'{{"orderIdentifier": {order_id}, "pair": "{pair}"}}',
-            "-p", f"{account}@active",
-            "--json"
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode == 0:
+        # Initialize LibreClient
+        client = LibreClient(api_url)
+        client.load_account_keys()  # This will load keys from .env.testnet by default
+        
+        # Prepare action data
+        action_data = {
+            "orderIdentifier": order_id,
+            "pair": pair
+        }
+        
+        # Execute the transaction
+        result = client.push_action(
+            contract="dex.libre",
+            action="cancelorder",
+            data=action_data,
+            account=account
+        )
+        
+        if result["success"]:
             print(f"✅ Successfully cancelled order {order_id}")
             return True
         else:
-            print(f"❌ Failed to cancel order {order_id}: {result.stderr}")
+            print(f"❌ Error cancelling order {order_id}: {result['error']}")
             return False
+            
     except Exception as e:
         print(f"❌ Error cancelling order {order_id}: {str(e)}")
         return False
