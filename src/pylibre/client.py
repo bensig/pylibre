@@ -42,11 +42,35 @@ def extract_error_message(error_json):
         return str(error_json)
 
 class LibreClient:
-    def __init__(self, api_url, verbose=False):
-        self.api_url = api_url
+    # Default API endpoints
+    ENDPOINTS = {
+        'testnet': 'https://testnet.libre.org',
+        'mainnet': 'https://lb.libre.org'
+    }
+
+    def __init__(self, api_url=None, verbose=False, env_file='.env.testnet'):
+        """Initialize LibreClient with automatic key loading.
+        
+        Args:
+            api_url (str, optional): Override API endpoint URL. If None, uses env-based default
+            verbose (bool): Enable verbose logging
+            env_file (str): Environment file to load keys from
+        """
+        # Determine environment from env_file name
+        env = 'mainnet' if 'mainnet' in env_file else 'testnet'
+        
+        # Use provided API URL or default based on environment
+        self.api_url = api_url or self.ENDPOINTS[env]
         self.private_keys = {}
-        self.net = Net(host=api_url)
+        self.net = Net(host=self.api_url)
         self.verbose = verbose
+        
+        # Automatically load keys on initialization
+        self.load_account_keys(env_file)
+        
+        if self.verbose:
+            print(f"Initialized LibreClient with {len(self.private_keys)} accounts")
+            print(f"Using API endpoint: {self.api_url}")
 
     def load_account_keys(self, env_file='.env.testnet'):
         """Load private keys from an environment file."""
@@ -86,16 +110,7 @@ class LibreClient:
         return response
 
     def get_currency_balance(self, account, symbol, contract=None):
-        """Get currency balance for an account.
-        
-        Args:
-            account (str): Account name
-            symbol (str): Token symbol (e.g., "USDT", "BTC", "LIBRE")
-            contract (str, optional): Token contract. If not specified, will be auto-detected:
-                - USDT: usdt.libre
-                - BTC: btc.libre
-                - LIBRE: eosio.token
-        """
+        """Get currency balance for an account."""
         try:
             # Auto-detect contract if not specified
             if contract is None:
@@ -104,7 +119,7 @@ class LibreClient:
                     "BTC": "btc.libre",
                     "LIBRE": "eosio.token"
                 }
-                contract = contract_map.get(symbol)
+                contract = contract_map.get(symbol.upper())
                 if not contract:
                     raise ValueError(f"Cannot auto-detect contract for symbol: {symbol}. Please specify contract.")
             
@@ -126,7 +141,7 @@ class LibreClient:
             if balances:
                 return balances[0]
             else:
-                decimals = 4 if symbol == "LIBRE" else 8
+                decimals = 4 if symbol.upper() == "LIBRE" else 8
                 return f"0.{'0' * decimals} {symbol}"
 
         except Exception as e:
@@ -134,36 +149,44 @@ class LibreClient:
                 print(f"Error getting balance: {str(e)}")
             raise
 
-    def get_table_rows(self, code, table, scope, limit=10, lower_bound="", upper_bound="", 
-                      index_position="", key_type="", reverse=False):
-        """Fetch rows from a smart contract table."""
-        payload = {
-            "code": code,
-            "table": table,
-            "scope": scope,
-            "limit": limit,
-            "json": True,
-            "reverse": reverse,
-            "lower_bound": lower_bound,
-            "upper_bound": upper_bound
-        }
-        
-        if index_position:
-            payload["index_position"] = index_position
-        if key_type:
-            payload["key_type"] = key_type
-
+    def get_table_rows(self, code: str, table: str, scope: str, limit: int = 10, 
+                      lower_bound: str = "", upper_bound: str = "", 
+                      index_position: str = "", key_type: str = "") -> dict:
+        """Get table rows from the blockchain."""
         try:
+            payload = {
+                "json": True,
+                "code": code,
+                "scope": scope,
+                "table": table,
+                "limit": limit
+            }
+            
+            # Only add these if they're provided
+            if lower_bound:
+                payload["lower_bound"] = lower_bound
+            if upper_bound:
+                payload["upper_bound"] = upper_bound
+            if index_position:
+                payload["index_position"] = index_position
+            if key_type:
+                payload["key_type"] = key_type
+            
+            if self.verbose:
+                print(f"\nAPI Request to /v1/chain/get_table_rows:")
+                print(f"Payload: {payload}")
+
             response = requests.post(
                 f"{self.api_url}/v1/chain/get_table_rows",
-                json=payload,
-                headers={'Content-Type': 'application/json'}
+                json=payload
             )
             response.raise_for_status()
-            result = response.json()
-            return result.get("rows", [])  # Return rows directly
-        except requests.exceptions.RequestException as e:
-            raise Exception(f"Failed to get table rows: {str(e)}")
+            return {"success": True, "rows": response.json()["rows"]}
+            
+        except Exception as e:
+            if self.verbose:
+                print(f"Error response: {e.response.text if hasattr(e, 'response') else str(e)}")
+            return {"success": False, "error": f"Failed to get table rows: {str(e)}"}
 
     def execute_action(self, contract, action_name, data, actor, permission="active"):
         """Execute a contract action using pyntelope."""

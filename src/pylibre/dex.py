@@ -57,76 +57,102 @@ class DexClient:
             memo=action
         )
 
-    def fetch_order_book(self, quote_symbol, base_symbol, table="orderbook2", contract="dex.libre", limit=50):
-        """
-        Fetch the order book for a specific trading pair on the DEX.
-
-        Args:
-            quote_symbol (str): Base token symbol (e.g., USDT, BTC).
-            base_symbol (str): Quote token symbol (e.g., BTC, LIBRE).
-            table (str): The table to query (default: "orderbook2").
-            contract (str): The DEX contract name (default: "dex.libre").
-            limit (int): Number of rows to fetch.
-
-        Returns:
-            dict: Parsed order book with bids and offers separated.
-        """
-        # Create scope by combining quote and base symbols in lowercase
-        scope = f"{base_symbol.lower()}{quote_symbol.lower()}"
-        
-        rows = self.client.get_table_rows(
-            code=contract,
-            table=table,
-            scope=scope,
-            limit=limit
-        )
-        bids = [row for row in rows if row["type"] == "buy"]
-        offers = [row for row in rows if row["type"] == "sell"]
-        
-        # Sort bids (highest first) and offers (lowest first)
-        bids = sorted(bids, key=lambda x: float(x["price"]), reverse=True)
-        offers = sorted(offers, key=lambda x: float(x["price"]))
-
-        return {"bids": bids, "offers": offers}
-
-    def cancel_order(self, account, order_id, quote_symbol, base_symbol, contract="dex.libre"):
-        """
-        Cancel an existing order on the DEX.
-
-        Args:
-            account (str): The account cancelling the order.
-            order_id (int): ID of the order to cancel.
-            quote_symbol (str): Quote token symbol (e.g., BTC).
-            base_symbol (str): Base token symbol (e.g., LIBRE).
-            contract (str): The DEX contract name (default: "dex.libre").
-
-        Returns:
-            dict: Result of the transaction.
-        """
+    def fetch_order_book(self, quote_symbol: str, base_symbol: str) -> dict:
+        """Fetch the complete order book for a trading pair."""
         try:
-            # Create pair string by combining base and quote symbols in lowercase
             pair = f"{base_symbol.lower()}{quote_symbol.lower()}"
             
-            print(f"🔍 Debug - Cancel Order:")
-            print(f"  Pair: {pair}")
-            print(f"  Order ID: {order_id}")
-            print(f"  Account: {account}")
+            if self.client.verbose:
+                print(f"Fetching order book for {base_symbol}/{quote_symbol}...")
             
-            data = {
-                "orderIdentifier": order_id,
-                "pair": pair
+            all_rows = []
+            more = True
+            last_key = ""
+            
+            while more:
+                response = self.client.get_table_rows(
+                    code="dex.libre",
+                    table="orderbook2",
+                    scope=pair,
+                    limit=1000,
+                    lower_bound=last_key
+                )
+                
+                if not response.get("success", False):
+                    if self.client.verbose:
+                        print(f"❌ Error fetching order book: {response.get('error', 'Unknown error')}")
+                    return None
+                
+                rows = response.get("rows", [])
+                all_rows.extend(rows)
+                
+                more = response.get("more", False)
+                if more:
+                    last_key = response.get("next_key", "")
+            
+            # Parse the rows into bids and offers
+            bids = []
+            offers = []
+            
+            for row in all_rows:
+                try:
+                    quantity = row["baseAsset"].split()[0]
+                    
+                    order = {
+                        "identifier": int(row["identifier"]),
+                        "account": row["account"],
+                        "price": row["price"],
+                        "quantity": quantity,
+                        "type": row.get("type", "sell")
+                    }
+                    
+                    if order["type"] == "buy":
+                        bids.append(order)
+                    else:
+                        offers.append(order)
+                except (KeyError, ValueError, IndexError) as e:
+                    if self.client.verbose:
+                        print(f"Warning: Skipping malformed order: {row}")
+                    continue
+            
+            return {
+                "bids": bids,
+                "offers": offers
             }
             
-            print(f"  Action Data: {data}")
+        except Exception as e:
+            if self.client.verbose:
+                print(f"❌ Error in fetch_order_book: {str(e)}")
+            return None
+
+    def cancel_order(self, account: str, order_id: int, quote_symbol: str, base_symbol: str) -> dict:
+        """Cancel an order."""
+        try:
+            pair = f"{base_symbol.lower()}{quote_symbol.lower()}"
             
-            return self.client.execute_action(
-                contract=contract,
+            result = self.client.execute_action(
+                contract="dex.libre",
                 action_name="cancelorder",
-                data=data,
+                data={
+                    "orderIdentifier": order_id,
+                    "pair": pair
+                },
                 actor=account
             )
+            
+            # Check the nested response structure
+            if isinstance(result, dict):
+                if result.get("success") and result.get("data", {}).get("transaction_id"):
+                    return {"success": True, "tx_id": result["data"]["transaction_id"]}
+                elif result.get("data", {}).get("transaction_id") is None:
+                    return {"success": False, "error": "Transaction rejected"}
+                else:
+                    error = result.get("error", "Unknown error")
+                    return {"success": False, "error": error}
+            
+            return {"success": False, "error": f"Invalid response type: {type(result)}"}
+            
         except Exception as e:
-            print(f"❌ Error in cancel_order: {str(e)}")
             return {"success": False, "error": str(e)}
 
     def cancel_all_orders(self, account, quote_symbol, base_symbol, contract="dex.libre"):

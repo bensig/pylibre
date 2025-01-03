@@ -123,12 +123,42 @@ class BaseStrategy(ABC):
             self.cleanup()
 
     def cleanup(self) -> None:
-        """
-        Cleanup resources and cancel orders on shutdown.
-        """
-        print("🧹 Cleaning up...")
-        self.cancel_orders()
-        self.is_running = False 
+        """Clean up by cancelling any open orders."""
+        try:
+            print("🧹 Cleaning up...")
+            order_book = self.dex.fetch_order_book(
+                quote_symbol=self.quote_symbol,
+                base_symbol=self.base_symbol
+            )
+            
+            if not order_book:
+                return
+            
+            # Find our orders
+            our_orders = (
+                [order for order in order_book["bids"] if order["account"] == self.account] +
+                [order for order in order_book["offers"] if order["account"] == self.account]
+            )
+            
+            if our_orders:
+                print(f"Cancelling {len(our_orders)} remaining orders...")
+                
+                for order in our_orders:
+                    self.dex.cancel_order(
+                        account=self.account,
+                        order_id=order["identifier"],
+                        quote_symbol=self.quote_symbol,
+                        base_symbol=self.base_symbol
+                    )
+                
+                print("✅ Cleanup complete")
+            else:
+                print("✨ No orders to clean up")
+                
+        except KeyboardInterrupt:
+            print("\n⚠️ Cleanup interrupted")
+        except Exception as e:
+            print(f"⚠️ Cleanup error: {e}")
 
     def place_distributed_orders(self, base_price: Decimal, min_spread: Decimal, max_spread: Decimal) -> bool:
         """
@@ -205,8 +235,8 @@ class BaseStrategy(ABC):
         """Get available balance for trading."""
         if self.base_symbol == "BTC":
             # For BTC/USDT pair, check BTC balance for sells and USDT/price for buys
-            btc_balance = self.client.get_currency_balance(None, self.account, "BTC")
-            usdt_balance = self.client.get_currency_balance(None, self.account, "USDT")
+            btc_balance = self.client.get_currency_balance(self.account, "BTC")
+            usdt_balance = self.client.get_currency_balance(self.account, "USDT")
             
             if isinstance(btc_balance, str) and isinstance(usdt_balance, str):
                 btc_amount = Decimal(btc_balance.split()[0])
