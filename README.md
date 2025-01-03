@@ -6,20 +6,20 @@ A Python client for interacting with the Libre blockchain.
 
 ```
 pylibre/
-├── accounts/                  # Account configurations
-│   └── accounts.json         # Trading account settings
+├── accounts/ # Account configurations
+│ └── accounts.json # Trading account settings
 ├── src/
-│   └── pylibre/
-│       ├── client.py         # LibreClient core functionality
-│       ├── dex.py           # DEX interaction methods
-│       ├── manager/         # Account management
-│       │   └── account.py   # AccountManager class
-│       └── strategies/      # Trading strategies
-│           ├── templates/   # Base strategy templates
-│           └── random_walk.py
-├── examples/                # Example scripts
-├── scripts/                # CLI tools
-└── tests/                  # Unit tests
+│ └── pylibre/
+│ ├── client.py # LibreClient core functionality
+│ ├── dex.py # DEX interaction methods
+│ ├── manager/ # Account management
+│ │ └── account.py # AccountManager class
+│ └── strategies/ # Trading strategies
+│ ├── templates/ # Base strategy templates
+│ └── random_walk.py
+├── examples/ # Example scripts
+├── scripts/ # CLI tools
+└── tests/ # Unit tests
 ```
 
 ## Installation 
@@ -85,18 +85,7 @@ This file is required for:
 - Checking IP address location to ensure non-US trading compliance
 - Accessing Binance API for price comparisons and market data
 
-### Environment Setup
-
-Create a `.env.testnet` or `.env.mainnet` file:
-```bash
-# For testnet
-API_URL=https://testnet.libre.org
-
-# For mainnet
-# API_URL=https://lb.libre.org
-```
-
-### Private Keys Setup
+### Environment Setup - API and Private Keys
 
 Create a `.env.testnet` or `.env.mainnet` file:
 ```bash
@@ -147,6 +136,11 @@ Or use the example scripts:
 ```bash
 python examples/run_random_walk.py
 ```
+
+Available strategies:
+- `RandomWalkStrategy`: Simple random price movement strategy
+- `OrderBookMakerStrategy`: Market making strategy with configurable spread
+- `MarketRateStrategy`: Price tracking strategy based on external markets
 
 ### CLI Commands
 
