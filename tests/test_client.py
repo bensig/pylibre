@@ -142,24 +142,29 @@ def test_get_currency_balance_empty(mock_post):
 
 @patch('requests.post')
 def test_get_table_rows_success(mock_post):
-    client = LibreClient("https://testnet.libre.org")
+    # Mock the response from the API
     mock_response = Mock()
     mock_response.json.return_value = {
-        "rows": [{"id": 1, "data": "test"}],
-        "more": False
+        'rows': [{'id': 1, 'data': 'test'}]
     }
     mock_response.status_code = 200
     mock_post.return_value = mock_response
 
+    client = LibreClient()
     result = client.get_table_rows(
         code="test.contract",
-        table="testtable",
-        scope="testscope"
+        table="test.table",
+        scope="test.scope"
     )
 
-    assert len(result) == 1
-    assert result[0]["id"] == 1
-    assert result[0]["data"] == "test"
+    # Check the full response structure
+    assert isinstance(result, dict)
+    assert 'success' in result
+    assert 'rows' in result
+    assert result['success'] is True
+    assert len(result['rows']) == 1
+    assert result['rows'][0]['id'] == 1
+    assert result['rows'][0]['data'] == 'test'
 
 @patch('requests.post')
 def test_get_table_pagination(mock_post):
