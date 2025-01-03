@@ -1,6 +1,8 @@
 import logging
 from typing import Optional
 from enum import Enum
+import os
+from datetime import datetime
 
 class LogLevel(Enum):
     DEBUG = logging.DEBUG
@@ -10,13 +12,34 @@ class LogLevel(Enum):
 
 class StrategyLogger:
     def __init__(self, strategy_name: str, level: LogLevel = LogLevel.INFO):
+        # Create logs directory if it doesn't exist
+        log_dir = "logs"
+        os.makedirs(log_dir, exist_ok=True)
+        
+        # Create a logger with both file and console handlers
         self.logger = logging.getLogger(f"pylibre.{strategy_name}")
-        handler = logging.StreamHandler()
-        formatter = logging.Formatter('%(asctime)s | %(levelname)s | %(message)s', 
-                                    datefmt='%H:%M:%S')
-        handler.setFormatter(formatter)
-        self.logger.addHandler(handler)
         self.logger.setLevel(level.value)
+        
+        # Prevent duplicate handlers
+        if not self.logger.handlers:
+            # Console handler
+            console_handler = logging.StreamHandler()
+            console_formatter = logging.Formatter('%(asctime)s | %(levelname)s | %(message)s', 
+                                        datefmt='%H:%M:%S')
+            console_handler.setFormatter(console_formatter)
+            
+            # File handler
+            timestamp = datetime.now().strftime("%Y%m%d")
+            file_handler = logging.FileHandler(
+                f"{log_dir}/{strategy_name}_{timestamp}.log"
+            )
+            file_formatter = logging.Formatter(
+                '%(asctime)s | %(levelname)s | %(message)s'
+            )
+            file_handler.setFormatter(file_formatter)
+            
+            self.logger.addHandler(console_handler)
+            self.logger.addHandler(file_handler)
         
     def debug(self, msg: str) -> None:
         self.logger.debug(msg)

@@ -1,0 +1,26 @@
+{
+    "strategies": [
+        {
+            "name": "MarketRateStrategy",
+            "account": "dextrader",
+            "base": "BTC",
+            "quote": "USDT",
+            "enabled": true,
+            "parameters": {
+                "interval": "1m"
+            }
+        },
+        {
+            "name": "OrderBookMakerStrategy",
+            "account": "dextester",
+            "base": "BTC",
+            "quote": "USDT",
+            "enabled": true,
+            "parameters": {}
+        }
+    ],
+    "global_settings": {
+        "log_level": "INFO",
+        "accounts_file": "config/accounts.json"
+    }
+} 
