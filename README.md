@@ -10,6 +10,7 @@ pylibre/
 │ └── config.yaml # Main configuration
 ├── src/
 │ └── pylibre/
+│ ├── cli.py # LibreClient command line interface
 │ ├── client.py # LibreClient core functionality
 │ ├── dex.py # DEX interaction methods
 │ ├── manager/ # System management
@@ -23,7 +24,7 @@ pylibre/
 │ └── random_walk.py
 │ └── orderbook_maker.py
 │ └── market_rate.py
-├── examples/ # Example scripts
+├── examples/ # Examples
 ├── scripts/ # CLI tools
 └── tests/ # Unit tests
 ```
@@ -48,24 +49,9 @@ Create a `config/config.yaml` file based on the `config/example.config.yaml` fil
 
 Fill in the values for the networks, accounts, and strategies.
 
-### Credentials Setup
-
-Create a `credentials.json` file in the root directory:
-
-```json
-{
-    "ip_api_key": "your_ip_api_key_here",
-    "binance": {
-        "api_key": "your_binance_api_key",
-        "api_secret": "your_binance_api_secret"
-    }
-}
-```
-
-This file is required for:
-- Checking IP address location to ensure non-US trading compliance
-- Accessing Binance API for price comparisons and market data
-
+You may also need to add credentials for external services:
+- Checking IP address location to ensure non-US trading compliance (IPInfo)
+- Accessing Binance API for price comparisons and market data (Binance)
 
 ### CLI Usage
 
