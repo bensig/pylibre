@@ -67,8 +67,8 @@ def mock_transaction():
 def client(mock_net, mock_types, mock_action, mock_data, mock_auth, mock_transaction):
     client = LibreClient("https://testnet.libre.org")
     client.private_keys = {
-        "testactor": "test_private_key",
-        "testsender": "test_private_key"
+        "testactor": "PRIVATE_KEY_PLACEHOLDER",
+        "testsender": "PRIVATE_KEY_PLACEHOLDER"
     }
     return client
 

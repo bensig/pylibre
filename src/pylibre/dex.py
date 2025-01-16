@@ -46,9 +46,11 @@ class DexClient:
 
         action = f"{order_type}:{format_amount(float(quantity), base_symbol)} {base_symbol}:{format_amount(float(price), quote_symbol, is_price=True)} {quote_symbol}"
         
-        print("\n🔍 Debug Information:")
-        print(f"Send Amount: {send_quantity} {send_symbol}")
-        print(f"Action Memo: {action}")
+        # Only show debug info if verbose mode is enabled
+        if self.client.verbose:
+            print("\n🔍 Debug Information:")
+            print(f"Send Amount: {send_quantity} {send_symbol}")
+            print(f"Action Memo: {action}")
         
         return self.client.transfer(
             from_account=account,

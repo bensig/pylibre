@@ -1,4 +1,4 @@
-from .strategy_manager import StrategyManager
-from .account_manager import AccountManager
+from .config_manager import ConfigManager
+from .trading_manager import TradingManager
 
-__all__ = ['StrategyManager', 'AccountManager'] 
+__all__ = ['ConfigManager', 'TradingManager'] 

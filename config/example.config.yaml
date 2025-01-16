@@ -1,0 +1,80 @@
+# Network configurations
+networks:
+  mainnet:
+    api_url: https://lb.libre.org
+    private_keys:  # Replaces .env files
+      account1: ""
+      acccount2: ""
+  testnet:
+    api_url: https://testnet.libre.org
+    private_keys:
+      account3: ""
+      account4: ""
+
+# Strategy groups (replaces manager.json)
+strategy_groups:
+  btc_market_making:
+    description: "BTC/USDT market making on testnet"
+    network: testnet
+    pairs: ["BTC/USDT"]
+    price_sources:
+      BTC/USDT:
+        source: binance
+        reference_symbol: BTCUSDT
+        update_interval_ms: 100
+    strategies:
+      - name: OrderBookMakerStrategy
+        accounts: ["account1", "account2"]
+        parameters:
+          update_interval_ms: 500
+          min_spread_percentage: 0.006
+          max_spread_percentage: 0.01
+          num_orders: 20
+          quantity_distribution: equal
+          order_spacing: linear
+          min_order_value_usd: 10.0
+          max_order_value_usd: 100.0
+
+# Account configurations (replaces accounts.json)
+accounts:
+  bentester:
+    description: "Test account for market making"
+    networks:
+      testnet:
+        enabled: true
+        max_orders: 50
+        max_position:
+          BTC: "1.0"
+          USDT: "50000.0"
+          LIBRE: "10000.0"
+        rate_limits:
+          max_orders_per_second: 10
+          max_cancels_per_second: 10
+      mainnet:
+        enabled: false
+
+  bentest3:
+    description: "Secondary test account"
+    networks:
+      testnet:
+        enabled: true
+        max_orders: 30
+        max_position:
+          BTC: "0.5"
+          USDT: "25000.0"
+        rate_limits:
+          max_orders_per_second: 10
+          max_cancels_per_second: 10
+      mainnet:
+        enabled: false
+
+# Global settings
+global_settings:
+  log_level: INFO
+  log_dir: logs
+  monitoring:
+    health_check_interval_ms: 1000
+    telegram_notifications: true
+  performance:
+    max_event_loop_lag_ms: 100
+    price_feed_timeout_ms: 500 

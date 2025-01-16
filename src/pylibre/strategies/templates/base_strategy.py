@@ -1,35 +1,42 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from pylibre import LibreClient
 from pylibre.dex import DexClient
+from pylibre.utils.logger import StrategyLogger
 import random
 import time
 from decimal import Decimal, ROUND_DOWN
 
 class BaseStrategy(ABC):
-    def __init__(self, 
-                 client: LibreClient,
-                 account: str,
-                 quote_symbol: str,
-                 base_symbol: str,
-                 config: Dict[str, Any]):
-        """
-        Initialize the base strategy.
+    """Base class for all trading strategies."""
+    
+    def __init__(
+        self,
+        client: LibreClient,
+        account: str,
+        base_symbol: str,
+        quote_symbol: str,
+        config: Dict[str, Any] = None,
+        logger: Optional[StrategyLogger] = None
+    ):
+        """Initialize the strategy.
         
         Args:
-            client: LibreClient instance for blockchain interaction
+            client: LibreClient instance
             account: Trading account name
-            quote_symbol: Base asset symbol (e.g., 'BTC')
-            base_symbol: Quote asset symbol (e.g., 'LIBRE')
-            config: Strategy-specific configuration parameters
+            base_symbol: Base asset symbol (e.g., BTC)
+            quote_symbol: Quote asset symbol (e.g., USDT)
+            config: Strategy configuration
+            logger: Optional strategy logger
         """
         self.client = client
-        self.dex = DexClient(client)
         self.account = account
-        self.quote_symbol = quote_symbol
         self.base_symbol = base_symbol
-        self.config = config
-        self.is_running = False
+        self.quote_symbol = quote_symbol
+        self.config = config or {}
+        self.logger = logger or StrategyLogger(f"Strategy_{account}")
+        self.dex = DexClient(client)
+        self.running = True
 
     @abstractmethod
     def generate_signal(self) -> Dict[str, Any]:
@@ -96,7 +103,7 @@ class BaseStrategy(ABC):
         """
         Main strategy execution loop.
         """
-        self.is_running = True
+        self.running = True
         print(f"🚀 Starting {self.__class__.__name__} for {self.base_symbol}/{self.quote_symbol}")
         
         try:
@@ -104,7 +111,7 @@ class BaseStrategy(ABC):
             signal = self.generate_signal()
             self.place_orders(signal)
             
-            while self.is_running:
+            while self.running:
                 # Generate trading signal
                 signal = self.generate_signal()
                 
@@ -251,10 +258,12 @@ class BaseStrategy(ABC):
                            price: Decimal, order_num: int) -> bool:
         """Place a single order with error handling."""
         try:
-            print(f"\n{'💰' if order_type == 'sell' else '💸'} Placing {order_type} "
-                  f"#{order_num+1} for {quantity} {self.base_symbol} "
-                  f"at {price:.10f}")
-            
+            # Format price based on quote currency
+            if self.quote_symbol in ['USDT', 'USD']:
+                price_str = f"${float(price):.2f}"
+            else:
+                price_str = f"{float(price):.8f} {self.quote_symbol}"
+
             result = self.dex.place_order(
                 account=self.account,
                 order_type=order_type,
@@ -264,15 +273,22 @@ class BaseStrategy(ABC):
                 base_symbol=self.base_symbol
             )
             
-            if not result.get("success"):
+            if result.get("success"):
+                # Only print one message on success
+                emoji = '💰' if order_type == 'sell' else '💸'
+                log_msg = (
+                    f"{self.account}: {order_type.upper()} {quantity} {self.base_symbol} "
+                    f"at {price_str}"
+                )
+                self.logger.info(f"{emoji} {log_msg}")
+                return True
+            else:
                 error = result.get('error', 'Unknown error')
-                print(f"❌ {order_type.title()} order #{order_num+1} failed: {error}")
+                self.logger.error(f"❌ {self.account}: {order_type.title()} order #{order_num+1} failed: {error}")
                 return False
                 
-            return True
-            
         except Exception as e:
-            print(f"❌ Error placing {order_type} order: {e}")
+            self.logger.error(f"❌ {self.account}: Error placing {order_type} order: {e}")
             return False
 
     def _distribute_quantities(self, total: Decimal, count: int) -> list:

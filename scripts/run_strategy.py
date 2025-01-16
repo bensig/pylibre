@@ -1,11 +1,12 @@
 from pylibre import LibreClient
-from pylibre.manager.account_manager import AccountManager
 from pylibre.strategies.random_walk import RandomWalkStrategy
 from pylibre.strategies.market_rate import MarketRateStrategy
-from pylibre.strategies.order_book_maker import OrderBookMakerStrategy
+from pylibre.strategies.orderbook_maker import OrderBookMakerStrategy
+from pylibre.utils.logger import StrategyLogger, LogLevel
 from decimal import Decimal, ROUND_DOWN
 import argparse
 import sys
+import signal
 
 def get_strategy_class(strategy_name: str):
     """Get the strategy class based on the strategy name."""
@@ -22,73 +23,52 @@ def main():
     parser.add_argument('--strategy', required=True, help='Strategy name')
     parser.add_argument('--base', default='LIBRE', help='Base asset symbol')
     parser.add_argument('--quote', default='BTC', help='Quote asset symbol')
-    parser.add_argument('--price', default='0.0000000100', help='Initial price')
     args = parser.parse_args()
 
-    # Initialize client (will use default endpoint based on env file)
-    client = LibreClient(verbose=True)
-
-    # Check if we have the key loaded
-    if args.account.lower() not in client.private_keys:
-        print(f"❌ No private key found for account: {args.account}")
-        print(f"Make sure ACCOUNT_{args.account.upper()}=<private_key> exists in .env.testnet")
-        return
-
-    # Default trading configuration
-    trading_config = {
-        'current_price': Decimal(args.price),
-        'min_change_percentage': Decimal('0.01'),   # 1%
-        'max_change_percentage': Decimal('0.20'),   # 20%
-        'spread_percentage': Decimal('0.02'),       # 2%
-        'quantity': '100.00000000',                # Amount per order
-        'interval': 5,                              # Seconds between iterations
-        'num_orders': 20,                         # Default to 20 orders
-        'quantity_distribution': 'equal',        # Default distribution method
-        'order_spacing': 'linear'               # Default spacing method
-    }
-
-    # Check account balances with explicit contracts
-    base_contract = {
-        'BTC': 'btc.libre',
-        'USDT': 'usdt.libre',
-        'LIBRE': 'eosio.token'
-    }.get(args.base.upper())
-    
-    quote_contract = {
-        'BTC': 'btc.libre',
-        'USDT': 'usdt.libre',
-        'LIBRE': 'eosio.token'
-    }.get(args.quote.upper())
-    
-    base_balance = client.get_currency_balance(args.account, args.base, contract=base_contract)
-    quote_balance = client.get_currency_balance(args.account, args.quote, contract=quote_contract)
-    
-    print(f"\n💰 Account Balances:")
-    print(f"{args.base}: {base_balance}")
-    print(f"{args.quote}: {quote_balance}")
-
-    # Initialize strategy
-    strategy_class = get_strategy_class(args.strategy)
-    if not strategy_class:
-        print(f"❌ Strategy not found: {args.strategy}")
-        return
-
-    # Initialize strategy with correct contract names
-    strategy = strategy_class(
-        client=client,
-        account=args.account,
-        base_symbol=args.base,
-        quote_symbol=args.quote,
-        config=trading_config
-    )
-
+    # Create unique logger for this strategy instance
+    strategy_id = f"{args.strategy}_{args.account}"
     try:
+        logger = StrategyLogger(strategy_id, LogLevel.INFO)
+        
+        # Initialize client with verbose=False
+        client = LibreClient(verbose=False)
+        
+        # Get strategy class
+        strategy_class = get_strategy_class(args.strategy)
+        if not strategy_class:
+            logger.error(f"Strategy class not found: {args.strategy}")
+            sys.exit(1)
+            
+        strategy = strategy_class(
+            client=client,
+            account=args.account,
+            base_symbol=args.base,
+            quote_symbol=args.quote,
+            config={},
+            logger=logger
+        )
+        
+        def handle_shutdown(signum, frame):
+            logger.info("Received shutdown signal")
+            strategy.cleanup()
+            sys.exit(0)
+            
+        signal.signal(signal.SIGINT, handle_shutdown)
+        signal.signal(signal.SIGTERM, handle_shutdown)
+        
+        logger.info(f"Starting {strategy_id}")
         strategy.run()
-    except KeyboardInterrupt:
-        print("\n⚠️ Strategy interrupted by user")
-        print("Cleaning up...")
-        strategy.cleanup()
-        print("Done!")
+        
+    except Exception as e:
+        import traceback
+        logger.error(f"Strategy error: {e}")
+        logger.error(traceback.format_exc())
+        if 'strategy' in locals():
+            try:
+                strategy.cleanup()
+            except Exception as cleanup_error:
+                logger.error(f"Cleanup error: {cleanup_error}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main() 

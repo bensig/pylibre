@@ -83,7 +83,6 @@ class OrderBookMakerStrategy(BaseStrategy):
                     
                     success = self._place_single_order(order_type, quantity_str, price, 0)
                     if success:
-                        print(f"📝 Placed new {order_type} order at {price:.8f}")
                         orders_placed += 1
                     
                     time.sleep(random.uniform(0.3, 0.7))

@@ -16,19 +16,13 @@ class StrategyLogger:
         log_dir = "logs"
         os.makedirs(log_dir, exist_ok=True)
         
-        # Create a logger with both file and console handlers
+        # Create a logger
         self.logger = logging.getLogger(f"pylibre.{strategy_name}")
         self.logger.setLevel(level.value)
         
         # Prevent duplicate handlers
         if not self.logger.handlers:
-            # Console handler
-            console_handler = logging.StreamHandler()
-            console_formatter = logging.Formatter('%(asctime)s | %(levelname)s | %(message)s', 
-                                        datefmt='%H:%M:%S')
-            console_handler.setFormatter(console_formatter)
-            
-            # File handler
+            # File handler only - no console handler
             timestamp = datetime.now().strftime("%Y%m%d")
             file_handler = logging.FileHandler(
                 f"{log_dir}/{strategy_name}_{timestamp}.log"
@@ -37,8 +31,6 @@ class StrategyLogger:
                 '%(asctime)s | %(levelname)s | %(message)s'
             )
             file_handler.setFormatter(file_formatter)
-            
-            self.logger.addHandler(console_handler)
             self.logger.addHandler(file_handler)
         
     def debug(self, msg: str) -> None:
