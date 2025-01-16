@@ -6,17 +6,23 @@ A Python client for interacting with the Libre blockchain.
 
 ```
 pylibre/
-├── accounts/ # Account configurations
-│ └── accounts.json # Trading account settings
+├── config/ # Configuration files
+│ └── config.yaml # Main configuration
 ├── src/
 │ └── pylibre/
 │ ├── client.py # LibreClient core functionality
 │ ├── dex.py # DEX interaction methods
-│ ├── manager/ # Account management
-│ │ └── account.py # AccountManager class
+│ ├── manager/ # System management
+│ │ ├── config_manager.py
+│ │ └── trading_manager.py
+│ ├── utils/ # Utility functions
+│ │ ├── binance_api.py
+│ │ └── shared_data.py
 │ └── strategies/ # Trading strategies
-│ ├── templates/ # Base strategy templates
+│ ├── templates/
 │ └── random_walk.py
+│ └── orderbook_maker.py
+│ └── market_rate.py
 ├── examples/ # Example scripts
 ├── scripts/ # CLI tools
 └── tests/ # Unit tests
@@ -36,36 +42,11 @@ pip install -e .
 
 ## Configuration
 
-### Account Setup
+### Main Configuration
 
-Create an `accounts/accounts.json` file to configure trading accounts:
+Create a `config/config.yaml` file based on the `config/example.config.yaml` file.
 
-```json
-{
-    "myaccount": {
-        "allowed_strategies": [
-            "RandomWalkStrategy"
-        ],
-        "allowed_pairs": [
-            "LIBRE/BTC",
-            "LIBRE/USDT"
-        ],
-        "default_settings": {
-            "interval": 5,
-            "quantity": "100.00000000",
-            "min_change_percentage": 0.01,
-            "max_change_percentage": 0.20,
-            "spread_percentage": 0.02
-        },
-        "strategy_settings": {
-            "RandomWalkStrategy": {
-                "interval": 5,
-                "quantity": "100.00000000"
-            }
-        }
-    }
-}
-```
+Fill in the values for the networks, accounts, and strategies.
 
 ### Credentials Setup
 
@@ -85,64 +66,8 @@ This file is required for:
 - Checking IP address location to ensure non-US trading compliance
 - Accessing Binance API for price comparisons and market data
 
-### Environment Setup - API and Private Keys
-
-Create a `.env.testnet` or `.env.mainnet` file:
-```bash
-# API endpoint
-API_URL=https://testnet.libre.org
-
-# Account private keys (format: ACCOUNT_<uppercase_account_name>=<private_key>)
-ACCOUNT_DEXTESTER=5K...
-ACCOUNT_DEXTRADER=5J...
-```
 
 ### CLI Usage
-
-Always specify the environment file when using the CLI:
-```bash
-# Basic format
-pylibre --env-file .env.testnet <command> [options]
-
-# Example transfer
-pylibre --env-file .env.testnet transfer dextester bentester "0.00001000 BTC" "memo"
-
-# Example table query
-pylibre --env-file .env.testnet table farm.libre account BTCUSD
-```
-
-## Usage
-
-### Python Client
-
-```python
-from pylibre import LibreClient
-
-# Initialize client
-client = LibreClient("https://testnet.libre.org")
-
-# Get balance
-balance = client.get_currency_balance("usdt.libre", "myaccount", "USDT")
-```
-
-### Trading Strategies
-
-Run a trading strategy:
-```bash
-python scripts/run_strategy.py --account myaccount --strategy RandomWalkStrategy --base BTC --quote LIBRE
-```
-
-Or use the example scripts:
-```bash
-python examples/run_random_walk.py
-```
-
-Available strategies:
-- `RandomWalkStrategy`: Simple random price movement strategy
-- `OrderBookMakerStrategy`: Market making strategy with configurable spread
-- `MarketRateStrategy`: Price tracking strategy based on external markets
-
-### CLI Commands
 
 Query table data:
 ```bash
@@ -166,6 +91,59 @@ Execute contract actions:
 ```bash
 pylibre --api-url https://testnet.libre.org execute reward.libre updateall myaccount '{"max_steps":"500"}'
 ```
+
+Always specify the environment file when using the CLI:
+```bash
+# Basic format
+pylibre --api-url https://testnet.libre.org <command> [options]
+
+# Example transfer
+pylibre --api-url https://testnet.libre.org transfer dextester bentester "0.00001000 BTC" "memo"
+
+# Example table query
+pylibre --api-url https://testnet.libre.org table farm.libre account BTCUSD
+```
+
+Run a strategy group
+```bash
+python scripts/run_trading.py btc_market_making --config config/config.yaml
+```
+
+Run a specific strategy
+```bash
+python scripts/run_strategy.py --account myaccount --strategy RandomWalkStrategy --base BTC --quote USDT
+```
+
+Cancel all orders for an account
+```bash 
+python scripts/cancel_all_orders.py --account myaccount --pair BTC/USDT
+```
+
+Run a strategy with a specific account
+```bash
+python scripts/run_strategy.py --account myaccount --strategy RandomWalkStrategy --base BTC --quote USDT
+```
+
+## Usage
+
+### Python Client
+
+```python
+from pylibre import LibreClient
+
+# Initialize client
+client = LibreClient("https://testnet.libre.org")
+
+# Get balance
+balance = client.get_currency_balance("usdt.libre", "myaccount", "USDT")
+```
+
+### Trading Strategies
+
+Available strategies:
+- `RandomWalkStrategy`: Simple random price movement strategy
+- `OrderBookMakerStrategy`: Market making strategy with configurable spread
+- `MarketRateStrategy`: Price tracking strategy based on external markets
 
 ## Development
 
