@@ -57,3 +57,4 @@ logs/
 TODO.md
 credentials.json
 shared_data/btcusdt_price.json
+config.yml
