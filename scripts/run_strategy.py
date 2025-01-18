@@ -1,21 +1,10 @@
 from pylibre import LibreClient
-from pylibre.strategies.random_walk import RandomWalkStrategy
-from pylibre.strategies.market_rate import MarketRateStrategy
-from pylibre.strategies.orderbook_maker import OrderBookMakerStrategy
+from pylibre.strategies import get_strategy_class
 from pylibre.utils.logger import StrategyLogger, LogLevel
-from decimal import Decimal, ROUND_DOWN
+from pylibre.manager.config_manager import ConfigManager
 import argparse
 import sys
 import signal
-
-def get_strategy_class(strategy_name: str):
-    """Get the strategy class based on the strategy name."""
-    strategies = {
-        'RandomWalkStrategy': RandomWalkStrategy,
-        'MarketRateStrategy': MarketRateStrategy,
-        'OrderBookMakerStrategy': OrderBookMakerStrategy
-    }
-    return strategies.get(strategy_name)
 
 def main():
     parser = argparse.ArgumentParser(description='Run a trading strategy')
@@ -23,6 +12,7 @@ def main():
     parser.add_argument('--strategy', required=True, help='Strategy name')
     parser.add_argument('--base', default='LIBRE', help='Base asset symbol')
     parser.add_argument('--quote', default='BTC', help='Quote asset symbol')
+    parser.add_argument('--config', default='config/config.yaml', help='Path to config file')
     args = parser.parse_args()
 
     # Create unique logger for this strategy instance
@@ -30,8 +20,23 @@ def main():
     try:
         logger = StrategyLogger(strategy_id, LogLevel.INFO)
         
-        # Initialize client with verbose=False
-        client = LibreClient(verbose=False)
+        # Load config and check for private key
+        config_manager = ConfigManager(args.config)
+        network_config = config_manager.get_network_config('testnet')
+        
+        if args.account not in network_config.get('private_keys', {}):
+            logger.error(f"No private key found for account {args.account} in network config")
+            sys.exit(1)
+            
+        private_key = network_config['private_keys'][args.account]
+        logger.info(f"Found private key for account {args.account}")
+        
+        # Initialize client with config
+        client = LibreClient(
+            network='testnet',
+            config_path=args.config,
+            verbose=False
+        )
         
         # Get strategy class
         strategy_class = get_strategy_class(args.strategy)
@@ -39,12 +44,19 @@ def main():
             logger.error(f"Strategy class not found: {args.strategy}")
             sys.exit(1)
             
+        # Get strategy parameters from config manager
+        pair = f"{args.base}/{args.quote}"
+        parameters = config_manager.get_strategy_parameters(args.strategy, pair)
+        if not parameters:
+            logger.error(f"No parameters found for strategy {args.strategy} and pair {pair}")
+            sys.exit(1)
+            
         strategy = strategy_class(
             client=client,
             account=args.account,
             base_symbol=args.base,
             quote_symbol=args.quote,
-            config={},
+            parameters=parameters,  # Pass the combined parameters here
             logger=logger
         )
         

@@ -3,8 +3,12 @@ from pylibre.dex import DexClient
 import json
 import time
 
-# Initialize clients
-client = LibreClient("https://testnet.libre.org")
+# Initialize clients with YAML config
+client = LibreClient(
+    network='testnet',
+    config_path='config/config.yaml',
+    verbose=True
+)
 dex = DexClient(client)
 from_account = "bentester"
 quote_symbol = "BTC"

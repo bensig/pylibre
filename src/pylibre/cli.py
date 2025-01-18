@@ -1,9 +1,9 @@
 import os
 import json
-from dotenv import load_dotenv
 import argparse
 from .client import LibreClient
 import sys
+from .dex import DexClient
 
 def create_parser():
     parser = argparse.ArgumentParser(
@@ -11,23 +11,24 @@ def create_parser():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-    # Global options (--api-url, --env-file) must come BEFORE the command
+    # Global options (--api-url, --network, --config) must come BEFORE the command
     
     # Get token balance
-    pylibre --env-file .env.testnet balance usdt.libre bentester USDT
+    pylibre balance bentester USDT
     
     # Get table data with filtering
-    pylibre --env-file .env.testnet table farm.libre account BTCUSD --lower-bound cesarcv
+    pylibre table farm.libre account BTCUSD --lower-bound cesarcv
     """
     )
 
     # Global options
-    parser.add_argument('--env-file', default='.env.testnet', 
-                       help='Environment file path (default: .env.testnet)')
+    parser.add_argument('--config', default='config/config.yaml', 
+                       help='Config file path (default: config/config.yaml)')
+    parser.add_argument('--network', default='testnet',
+                       choices=['mainnet', 'testnet'],
+                       help='Network to use (default: testnet)')
     parser.add_argument('--api-url', 
-                       help='API URL (e.g., https://testnet.libre.org)')
-    parser.add_argument('--unlock', action='store_true',
-                       help='Unlock wallet for the account')
+                       help='Override API URL (e.g., https://testnet.libre.org)')
     parser.add_argument('--verbose', '-v', action='store_true',
                        help='Enable verbose output')
 
@@ -138,6 +139,30 @@ Examples:
     transfer_parser.add_argument('memo', nargs='?', default="", help='Transfer memo (optional)')
     transfer_parser.add_argument('--contract', help='Token contract (optional for USDT/BTC/LIBRE)')
 
+    # DEX commands
+    dex_parser = subparsers.add_parser('dex', help='DEX operations')
+    dex_subparsers = dex_parser.add_subparsers(dest='dex_command', help='DEX commands')
+    
+    # DEX orderbook command
+    orderbook_parser = dex_subparsers.add_parser('orderbook', 
+        help='Get DEX orderbook',
+        description="Get the current orderbook for a trading pair"
+    )
+    orderbook_parser.add_argument('base_symbol', help='Base token symbol (e.g., LIBRE)')
+    orderbook_parser.add_argument('quote_symbol', help='Quote token symbol (e.g., BTC)')
+    
+    # DEX order command
+    order_parser = dex_subparsers.add_parser('order', 
+        help='Place order on DEX',
+        description="Place a buy or sell order on the DEX"
+    )
+    order_parser.add_argument('account', help='Trading account')
+    order_parser.add_argument('order_type', choices=['buy', 'sell'], help='Order type')
+    order_parser.add_argument('quantity', help='Amount to trade')
+    order_parser.add_argument('base_symbol', help='Base token symbol (e.g., LIBRE)')
+    order_parser.add_argument('quote_symbol', help='Quote token symbol (e.g., BTC)')
+    order_parser.add_argument('price', help='Price per unit')
+
     return parser
 
 def print_usage():
@@ -145,12 +170,12 @@ def print_usage():
     print("""PyLibre CLI - Interact with Libre blockchain
 
 Usage:
-    pylibre [--api-url URL] <command> [<args>...]
+    pylibre [--network <network>] [--api-url URL] <command> [<args>...]
 
 Commands:
-    balance <contract> <account> <symbol>
+    balance <account> <symbol>
         Get token balance
-        Example: pylibre balance usdt.libre bentester USDT
+        Example: pylibre balance bentester USDT
 
     table <contract> <table> <scope> [--index <pos>] [--key-type <type>]
         Get table rows (paginated)
@@ -160,20 +185,27 @@ Commands:
         Get all table rows
         Example: pylibre table-all stake.libre stake stake.libre
 
-    transfer <contract> <from> <to> <quantity> [memo]
+    transfer <from> <to> <quantity> [memo]
         Transfer tokens
-        Example: pylibre transfer usdt.libre bentester bentest3 "1.00000000 USDT" "memo"
+        Example: pylibre transfer bentester bentest3 "1.00000000 USDT" "memo"
 
     execute <contract> <action> <actor> <data>
         Execute contract action
         Example: pylibre execute reward.libre updateall bentester '{"max_steps":"500"}'
 
-Options:
-    --api-url URL    API endpoint URL [default: https://testnet.libre.org]
-    --help          Show this help message
+    dex orderbook <base_symbol> <quote_symbol>
+        Get DEX orderbook
+        Example: pylibre dex orderbook LIBRE BTC
 
-Note: For testnet operations, use --api-url https://testnet.libre.org
-      For mainnet operations, use --api-url https://lb.libre.org
+    dex order <account> <order_type> <quantity> <base_symbol> <quote_symbol> <price>
+        Place order on DEX
+        Example: pylibre dex order bentester buy 100 LIBRE BTC 100
+
+Options:
+    --network        Network to use [default: testnet]
+    --api-url URL    Override API endpoint URL
+    --config PATH    Config file path [default: config/config.yaml]
+    --help          Show this help message
 """)
 
 def main():
@@ -181,24 +213,16 @@ def main():
         parser = create_parser()
         args = parser.parse_args()
         
-        # Load environment variables
-        if args.verbose:
-            print(f"Loading environment from: {args.env_file}")
-        load_dotenv(args.env_file)
-        
-        # Initialize client with API URL from args or environment
-        api_url = args.api_url or os.getenv("API_URL")
-        if not api_url:
-            print(json.dumps({
-                "success": False,
-                "error": "API URL must be provided either through --api-url argument or API_URL environment variable"
-            }))
-            return 1
-            
-        client = LibreClient(api_url=api_url, verbose=args.verbose)
-        if args.verbose:
-            print(f"Loading account keys from: {args.env_file}")
-        client.load_account_keys(args.env_file)
+        # Initialize client with config and network settings
+        client = LibreClient(
+            api_url=args.api_url,
+            network=args.network,
+            config_path=args.config,
+            verbose=args.verbose
+        )
+
+        # Add DEX client
+        dex = DexClient(client)
 
         # Handle different commands
         if args.command == 'table':
@@ -232,7 +256,6 @@ def main():
                 memo=args.memo,
                 contract=args.contract  # Will be None if not specified
             )
-            
             print(json.dumps(result, indent=2))
             
         elif args.command == 'balance':
@@ -252,6 +275,25 @@ def main():
             )
             print(json.dumps(result))
             
+        elif args.command == 'dex':
+            if args.dex_command == 'orderbook':
+                result = dex.fetch_order_book(
+                    quote_symbol=args.quote_symbol,
+                    base_symbol=args.base_symbol
+                )
+                print(json.dumps(result, indent=2))
+                
+            elif args.dex_command == 'order':
+                result = dex.place_order(
+                    account=args.account,
+                    order_type=args.order_type,
+                    quantity=args.quantity,
+                    price=args.price,
+                    quote_symbol=args.quote_symbol,
+                    base_symbol=args.base_symbol
+                )
+                print(json.dumps(result, indent=2))
+
         else:
             print(json.dumps({
                 "success": False,

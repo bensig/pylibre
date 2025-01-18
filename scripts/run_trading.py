@@ -31,7 +31,7 @@ class ServiceManager:
 
     async def start_price_fetcher(self):
         """Start the price fetcher script as a subprocess."""
-        if "BTC/USDT" in self.group_config["pairs"]:
+        if "price_sources" in self.group_config:
             script_path = Path(__file__).parent / "fetch_prices.py"
             self.logger.info(f"Starting price fetcher: {script_path}")
             

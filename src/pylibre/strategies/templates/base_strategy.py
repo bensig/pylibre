@@ -6,6 +6,31 @@ from pylibre.utils.logger import StrategyLogger
 import random
 import time
 from decimal import Decimal, ROUND_DOWN
+from pylibre.utils.shared_data import read_price
+from pylibre.utils.logger import LogLevel
+
+DEFAULT_COIN_LIMITS = {
+    'USDT': {
+        'min_order_value': 10.0,
+        'max_order_value': 100.0,
+    },
+    'BTC': {
+        'min_order_value': 0.0001,
+        'max_order_value': 0.001,
+    },
+    'LIBRE': {
+        'min_order_value': 100.0,
+        'max_order_value': 1000.0,
+    }
+}
+
+DEFAULT_STRATEGY_PARAMS = {
+    'min_spread_percentage': 0.006,
+    'max_spread_percentage': 0.01,
+    'num_orders': 20,
+    'order_spacing': 'linear',
+    'quantity_distribution': 'random'
+}
 
 class BaseStrategy(ABC):
     """Base class for all trading strategies."""
@@ -16,27 +41,27 @@ class BaseStrategy(ABC):
         account: str,
         base_symbol: str,
         quote_symbol: str,
-        config: Dict[str, Any] = None,
+        parameters: Dict[str, Any],
         logger: Optional[StrategyLogger] = None
     ):
-        """Initialize the strategy.
-        
-        Args:
-            client: LibreClient instance
-            account: Trading account name
-            base_symbol: Base asset symbol (e.g., BTC)
-            quote_symbol: Quote asset symbol (e.g., USDT)
-            config: Strategy configuration
-            logger: Optional strategy logger
-        """
+        """Initialize the strategy."""
         self.client = client
         self.account = account
         self.base_symbol = base_symbol
         self.quote_symbol = quote_symbol
-        self.config = config or {}
-        self.logger = logger or StrategyLogger(f"Strategy_{account}")
+        self.parameters = parameters
+        self.logger = logger or StrategyLogger(f"Strategy_{account}", level=LogLevel.DEBUG)
         self.dex = DexClient(client)
         self.running = True
+
+        # Log initial configuration
+        self.logger.debug(
+            f"Strategy initialized with:"
+            f"\n - Account: {account}"
+            f"\n - Base Symbol: {base_symbol}"
+            f"\n - Quote Symbol: {quote_symbol}"
+            f"\n - Parameters: {parameters}"
+        )
 
     @abstractmethod
     def generate_signal(self) -> Dict[str, Any]:
@@ -100,185 +125,240 @@ class BaseStrategy(ABC):
             return False
 
     def run(self) -> None:
-        """
-        Main strategy execution loop.
-        """
+        """Main strategy execution loop."""
         self.running = True
-        print(f"🚀 Starting {self.__class__.__name__} for {self.base_symbol}/{self.quote_symbol}")
+        self.logger.info(f"Starting {self.__class__.__name__} for {self.base_symbol}/{self.quote_symbol}")
         
         try:
-            # Initial order placement to fill the book
-            signal = self.generate_signal()
-            self.place_orders(signal)
-            
             while self.running:
                 # Generate trading signal
                 signal = self.generate_signal()
+                if signal:
+                    # Place orders based on signal
+                    self.place_orders(signal)
                 
-                # Randomly select and cancel 1-2 orders
-                self.cancel_random_orders()
-                
-                # Place new orders to replace cancelled ones
-                self.place_replacement_orders(signal)
-                
-                # Wait for next iteration
-                time.sleep(self.config.get('interval', 5))
+                # Wait for next iteration using update_interval_ms from parameters
+                time.sleep(self.parameters.get('update_interval_ms', 500) / 1000)
                 
         except KeyboardInterrupt:
-            print("\n\n🛑 Strategy stopped by user")
+            self.logger.info("Strategy stopped by user")
+        except Exception as e:
+            self.logger.error(f"Strategy error: {e}")
         finally:
             self.cleanup()
 
-    def cleanup(self) -> None:
-        """Clean up by cancelling any open orders."""
+    def cleanup(self):
+        """Clean up any open orders when the strategy stops."""
         try:
-            print("🧹 Cleaning up...")
-            order_book = self.dex.fetch_order_book(
-                quote_symbol=self.quote_symbol,
-                base_symbol=self.base_symbol
+            self.logger.info(f"Cleaning up strategy for {self.account}...")
+            
+            # Cancel all orders for this trading pair
+            result = self.dex.cancel_all_orders(
+                self.account,
+                self.quote_symbol,
+                self.base_symbol
             )
             
-            if not order_book:
-                return
-            
-            # Find our orders
-            our_orders = (
-                [order for order in order_book["bids"] if order["account"] == self.account] +
-                [order for order in order_book["offers"] if order["account"] == self.account]
-            )
-            
-            if our_orders:
-                print(f"Cancelling {len(our_orders)} remaining orders...")
-                
-                for order in our_orders:
-                    self.dex.cancel_order(
-                        account=self.account,
-                        order_id=order["identifier"],
-                        quote_symbol=self.quote_symbol,
-                        base_symbol=self.base_symbol
-                    )
-                
-                print("✅ Cleanup complete")
+            if result.get("success"):
+                self.logger.info("Successfully cancelled all orders")
             else:
-                print("✨ No orders to clean up")
+                self.logger.error(f"Failed to cancel orders: {result.get('error')}")
                 
-        except KeyboardInterrupt:
-            print("\n⚠️ Cleanup interrupted")
         except Exception as e:
-            print(f"⚠️ Cleanup error: {e}")
+            self.logger.error(f"Error during cleanup: {e}")
+        finally:
+            self.running = False
+    def _get_order_limits(self) -> tuple[Decimal, Decimal]:
+        """Get minimum and maximum order sizes for the current symbol."""
+        # Get default limits for the symbol
+        default_limits = DEFAULT_COIN_LIMITS.get(self.base_symbol, {
+            'min_order_value': 10.0,
+            'max_order_value': 100.0,
+        })
+        
+        # Get limits from parameters, falling back to defaults
+        min_order = Decimal(str(self.parameters.get(
+            'min_order_value',
+            default_limits['min_order_value']
+        )))
+        max_order = Decimal(str(self.parameters.get(
+            'max_order_value',
+            default_limits['max_order_value']
+        )))
+        
+        self.logger.debug(
+            f"Order limits for {self.base_symbol}: "
+            f"min={min_order}, max={max_order}"
+        )
+        
+        return min_order, max_order
+
+    def _get_available_balance(self) -> Decimal:
+        """Get available balance for trading."""
+        min_order, max_order = self._get_order_limits()
+        
+        balance = self.client.get_currency_balance(self.account, self.base_symbol)
+        print(f"\nBalance check:")
+        print(f"Raw balance response: {balance}")
+        
+        if isinstance(balance, str):
+            amount = Decimal(balance.split()[0])
+            print(f"Parsed balance: {amount} {self.base_symbol}")
+            return max(min_order, min(max_order, amount))
+        
+        print("No balance found!")
+        return Decimal('0')
 
     def place_distributed_orders(self, base_price: Decimal, min_spread: Decimal, max_spread: Decimal) -> bool:
-        """
-        Place multiple orders with configurable distribution and spacing.
-        """
+        """Place multiple orders with configurable distribution and spacing."""
         try:
-            num_orders = 20  # Fixed at 20 orders (10 per side)
-            
-            # Calculate available balance and reserve 20% for ongoing trading
+            print("\n=== Starting place_distributed_orders ===")
+            min_order, max_order = self._get_order_limits()
             total_balance = self._get_available_balance()
-            trading_reserve = total_balance * Decimal('0.2')  # Keep 20% in reserve
-            initial_order_balance = total_balance * Decimal('0.8')  # Use 80% for initial orders
             
-            # Calculate per-order quantity
-            per_order_quantity = (initial_order_balance / Decimal(str(num_orders))).quantize(
-                Decimal('0.00000001'), rounding=ROUND_DOWN
-            )
+            print(f"\nInitial values:")
+            print(f"Base price: {base_price}")
+            print(f"Total Balance: {total_balance} {self.base_symbol}")
+            print(f"Min Order: {min_order} {self.base_symbol}")
+            print(f"Max Order: {max_order} {self.base_symbol}")
             
-            if per_order_quantity < Decimal('0.00000100'):
-                print("❌ Insufficient balance for minimum order size")
+            # Calculate number of orders based on minimum order size
+            max_possible_orders = int((total_balance / min_order).to_integral_value(rounding=ROUND_DOWN))
+            num_orders = min(20, max_possible_orders)  # Cap at 20 orders
+            
+            print(f"\nOrder count calculations:")
+            print(f"Max Possible Orders: {max_possible_orders}")
+            print(f"Num Orders: {num_orders}")
+            
+            if num_orders == 0:
+                print(f"❌ Insufficient balance for minimum orders")
+                self.logger.error(
+                    f"❌ Available balance {total_balance} {self.base_symbol} insufficient "
+                    f"for minimum order size {min_order} {self.base_symbol}"
+                )
                 return False
             
-            # Calculate spread step size
-            spread_range = max_spread - min_spread
-            spread_step = spread_range / Decimal('10')  # 10 steps for each side
+            # Calculate per-order quantity - ensure it's at least the minimum
+            per_order_quantity = max(
+                min_order,
+                (total_balance / Decimal(str(num_orders))).quantize(
+                    Decimal('0.00000001'), rounding=ROUND_DOWN
+                )
+            )
+            
+            print(f"\nQuantity calculations:")
+            print(f"Per Order Quantity: {per_order_quantity} {self.base_symbol}")
+            
+            # Split orders evenly between buys and sells
+            orders_per_side = num_orders // 2
+            spread_step = (max_spread - min_spread) / Decimal(str(orders_per_side))
+            
+            print(f"Orders Per Side: {orders_per_side}")
+            print(f"Spread Step: {spread_step}")
             
             successful_orders = []
             
-            # Place buy orders (10 orders below base price)
-            for i in range(10):
-                time.sleep(random.uniform(0.5, 1.0))
+            # Place buy orders
+            for i in range(orders_per_side):
                 spread = min_spread + (spread_step * Decimal(str(i)))
+                price = base_price * (Decimal('1') - spread)
                 
-                # Add small random variation to spread (±10% of step size)
-                variation = Decimal(str(random.uniform(-0.1, 0.1))) * spread_step
-                final_spread = spread + variation
-                
-                price = base_price * (Decimal('1') - final_spread)
-                
-                # Add small random variation to quantity (±5%)
-                quantity = per_order_quantity * Decimal(str(random.uniform(0.95, 1.05)))
-                quantity_str = f"{quantity:.8f}"
+                # Use exact per_order_quantity - no random variation
+                quantity_str = f"{per_order_quantity:.8f}"
+                print(f"\nPlacing buy order #{i+1}:")
+                print(f"Quantity: {quantity_str} {self.base_symbol}")
+                print(f"Price: {price}")
                 
                 success = self._place_single_order("buy", quantity_str, price, i)
                 if success:
                     successful_orders.append(i)
             
-            # Place sell orders (10 orders above base price)
-            for i in range(10):
-                time.sleep(random.uniform(0.5, 1.0))
+            # Place sell orders
+            for i in range(orders_per_side):
                 spread = min_spread + (spread_step * Decimal(str(i)))
+                price = base_price * (Decimal('1') + spread)
                 
-                # Add small random variation to spread (±10% of step size)
-                variation = Decimal(str(random.uniform(-0.1, 0.1))) * spread_step
-                final_spread = spread + variation
+                # Use exact per_order_quantity - no random variation
+                quantity_str = f"{per_order_quantity:.8f}"
+                print(f"\nPlacing sell order #{i+1}:")
+                print(f"Quantity: {quantity_str} {self.base_symbol}")
+                print(f"Price: {price}")
                 
-                price = base_price * (Decimal('1') + final_spread)
-                
-                # Add small random variation to quantity (±5%)
-                quantity = per_order_quantity * Decimal(str(random.uniform(0.95, 1.05)))
-                quantity_str = f"{quantity:.8f}"
-                
-                success = self._place_single_order("sell", quantity_str, price, i + 10)
+                success = self._place_single_order("sell", quantity_str, price, i + orders_per_side)
                 if success:
-                    successful_orders.append(i + 10)
+                    successful_orders.append(i + orders_per_side)
             
             return len(successful_orders) > 0
             
         except Exception as e:
-            print(f"❌ Error placing distributed orders: {str(e)}")
+            self.logger.error(f"❌ Error placing distributed orders: {str(e)}")
             return False
 
-    def _get_available_balance(self) -> Decimal:
-        """Get available balance for trading."""
-        if self.base_symbol == "BTC":
-            # For BTC/USDT pair, check BTC balance for sells and USDT/price for buys
-            btc_balance = self.client.get_currency_balance(self.account, "BTC")
-            usdt_balance = self.client.get_currency_balance(self.account, "USDT")
-            
-            if isinstance(btc_balance, str) and isinstance(usdt_balance, str):
-                btc_amount = Decimal(btc_balance.split()[0])
-                usdt_amount = Decimal(usdt_balance.split()[0])
-                # Use current price from config or a default
-                price = self.config.get('current_price', Decimal('100000.0'))
-                return min(btc_amount, usdt_amount / price)
-        
-        return Decimal('0')
+    def _get_precision(self, symbol: str) -> int:
+        """Get decimal precision for a token."""
+        precision_map = {
+            "LIBRE": 4,
+            "BTC": 8,
+            "USDT": 8
+        }
+        return precision_map.get(symbol, 8)
+
+    def _format_quantity(self, quantity: Decimal, symbol: str) -> str:
+        """Format quantity with correct precision."""
+        precision = self._get_precision(symbol)
+        return f"{quantity:.{precision}f}"
 
     def _place_single_order(self, order_type: str, quantity: str, 
                            price: Decimal, order_num: int) -> bool:
         """Place a single order with error handling."""
         try:
-            # Format price based on quote currency
-            if self.quote_symbol in ['USDT', 'USD']:
-                price_str = f"${float(price):.2f}"
+            min_order, _ = self._get_order_limits()
+            
+            # Convert quantity and price to Decimal for calculations
+            quantity_decimal = Decimal(str(quantity))
+            price_decimal = Decimal(str(price))
+            
+            # Check minimum order size
+            if quantity_decimal < min_order:
+                self.logger.error(
+                    f"❌ Order quantity {quantity_decimal} {self.base_symbol} "
+                    f"below minimum {min_order} {self.base_symbol}"
+                )
+                return False
+            
+            # Calculate total value in BTC
+            total_value = quantity_decimal * price_decimal
+            
+            # Check if total value is at least 1 satoshi (0.00000001 BTC)
+            if self.quote_symbol == 'BTC' and total_value < Decimal('0.00000001'):
+                self.logger.error(
+                    f"❌ Total order value {total_value:.10f} BTC "
+                    f"({quantity_decimal} {self.base_symbol} * {price_decimal:.10f} BTC) "
+                    f"is below minimum of 0.00000001 BTC (1 satoshi)"
+                )
+                return False
+
+            # Format price with 10 decimal places for BTC
+            if self.quote_symbol == 'BTC':
+                price_str = f"{price_decimal:.10f}"
             else:
-                price_str = f"{float(price):.8f} {self.quote_symbol}"
+                price_str = f"{price_decimal:.8f}"
 
             result = self.dex.place_order(
                 account=self.account,
                 order_type=order_type,
-                quantity=quantity,
-                price=f"{price:.10f}",
+                quantity=str(quantity),
+                price=price_str,
                 quote_symbol=self.quote_symbol,
                 base_symbol=self.base_symbol
             )
             
             if result.get("success"):
-                # Only print one message on success
                 emoji = '💰' if order_type == 'sell' else '💸'
                 log_msg = (
                     f"{self.account}: {order_type.upper()} {quantity} {self.base_symbol} "
-                    f"at {price_str}"
+                    f"at {price_str} {self.quote_symbol} "
+                    f"(Total: {total_value:.8f} {self.quote_symbol})"
                 )
                 self.logger.info(f"{emoji} {log_msg}")
                 return True
@@ -292,16 +372,13 @@ class BaseStrategy(ABC):
             return False
 
     def _distribute_quantities(self, total: Decimal, count: int) -> list:
-        """
-        Distribute total quantity across orders with randomization.
-        """
-        distribution = self.config.get('quantity_distribution', 'equal')
+        """Distribute total quantity across orders with randomization."""
+        distribution = self.parameters.get('quantity_distribution', 'equal')
         
         if distribution == 'equal':
             base_qty = total / count
             # Add random variation (±10%)
             return [base_qty * Decimal(str(random.uniform(0.9, 1.1))) for _ in range(count)]
-        # Add other distribution methods here
         return [total / count] * count
 
     def _place_bid_ask_pair(self, bid_price: Decimal, ask_price: Decimal, 
@@ -362,9 +439,17 @@ class BaseStrategy(ABC):
     def place_replacement_orders(self, signal: Dict[str, Any]) -> bool:
         """Place a single new order to replace the cancelled one."""
         try:
-            base_price = signal['price']
-            min_spread = signal['min_spread']
-            max_spread = signal['max_spread']
+            if signal is None:
+                self.logger.error("No valid signal to place replacement orders")
+                return False
+            
+            base_price = signal.get('price')
+            min_spread = signal.get('min_spread')
+            max_spread = signal.get('max_spread')
+            
+            if not all([base_price, min_spread, max_spread]):
+                self.logger.error("Missing required signal data")
+                return False
             
             # Calculate available balance including reserve
             available_balance = self._get_available_balance()
@@ -385,10 +470,56 @@ class BaseStrategy(ABC):
             
             # Calculate quantity with some randomization (±5%)
             quantity = per_order_quantity * Decimal(str(random.uniform(0.95, 1.05)))
-            quantity_str = f"{quantity:.8f}"
+            quantity_str = self._format_quantity(quantity, self.base_symbol)
             
             return self._place_single_order(order_type, quantity_str, price, 0)
             
         except Exception as e:
-            print(f"Error placing replacement order: {e}")
+            self.logger.error(f"Error placing replacement order: {e}")
             return False
+
+    def get_market_price(self) -> Optional[Decimal]:
+        """Get market price from price feed."""
+        try:
+            # Get price source from parameters if available
+            pair = f"{self.base_symbol}/{self.quote_symbol}"
+            price_source = self.parameters.get('price_source', {})
+            
+            # If there's a specific config with a fixed price, use that
+            if price_source and price_source.get('type') == 'fixed':
+                price = price_source.get('price')
+                if price:
+                    return Decimal(str(price))
+            
+            # Otherwise try to read from the default price file
+            price_file = f"shared_data/{self.base_symbol.lower()}{self.quote_symbol.lower()}_price.json"
+            price = read_price(price_file)
+            if price:
+                return Decimal(str(price))
+            
+            self.logger.error(f"Could not read price from {price_file}")
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"Error getting market price: {e}")
+            return None
+
+    def generate_signal(self) -> Dict[str, Any]:
+        """Generate signal based on market price feed."""
+        market_price = self.get_market_price()
+        if market_price is None:
+            return None
+        
+        # Get min and max spreads from parameters
+        min_spread = Decimal(str(self.parameters['min_spread_percentage']))
+        max_spread = Decimal(str(self.parameters['max_spread_percentage']))
+        
+        self.logger.debug(
+            f"Generating signal with spreads: {min_spread} to {max_spread}"
+        )
+        
+        return {
+            'price': market_price,
+            'min_spread': min_spread,
+            'max_spread': max_spread
+        }

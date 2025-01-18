@@ -1,63 +1,51 @@
 import json
 from .client import LibreClient
+from decimal import Decimal, ROUND_DOWN
 
 class DexClient:
     def __init__(self, client: LibreClient):
         self.client = client
 
     def place_order(self, account, order_type, quantity, price, quote_symbol, base_symbol, contract="dex.libre"):
-        """
-        Place an order on the DEX (bid or offer).
+        """Place an order on the DEX (bid or offer)."""
+        try:
+            # Convert inputs to Decimal for precise calculation
+            quantity_dec = Decimal(str(quantity))
+            price_dec = Decimal(str(price))
 
-        Args:
-            account (str): The account placing the order.
-            order_type (str): Either "buy" or "sell".
-            quantity (str): Quantity of the base token to trade.
-            price (str): Price per unit in quote token.
-            quote_symbol (str): Quote token symbol (e.g., BTC).
-            base_symbol (str): Base token symbol (e.g., LIBRE).
-            contract (str): DEX contract name (default: "dex.libre").
+            # Format with correct precision
+            if order_type == 'buy':
+                send_amount = quantity_dec * price_dec
+                send_symbol = quote_symbol
+                send_quantity = f"{send_amount:.8f}"
+            else:  # sell
+                send_amount = quantity_dec
+                send_symbol = base_symbol
+                precision = 4 if base_symbol == 'LIBRE' else 8
+                send_quantity = f"{send_amount:.{precision}f}"
 
-        Returns:
-            dict: Result of the transaction.
-        """
-        def format_amount(amount, symbol, is_price=False):
-            """Format amount with correct precision
+            # Create the action memo - exact format that works
+            action = f"{order_type}:{quantity_dec:.4f} {base_symbol}:{price_dec:.10f} {quote_symbol}"
             
-            Args:
-                amount (float|str): Amount to format
-                symbol (str): Token symbol
-                is_price (bool): If True, uses price precision (10), otherwise uses token precision
-            """
-            if is_price:
-                precision = 10
+            print(f"Placing {order_type} order: {quantity} {base_symbol} @ {price} {quote_symbol}")
+            
+            result = self.client.transfer(
+                from_account=account,
+                to_account=contract,
+                quantity=f"{send_quantity} {send_symbol}",
+                memo=action
+            )
+
+            if result.get("success"):
+                print(f"✅ Order placed successfully")
             else:
-                precision = 4 if symbol == "LIBRE" else 8
-            return f"{float(amount):.{precision}f}"
-
-        # For buy orders, we need to send quote_quantity = quantity * price
-        # For sell orders, we send the base_quantity directly
-        if order_type == 'buy':
-            send_quantity = format_amount(float(quantity) * float(price), quote_symbol)
-            send_symbol = quote_symbol
-        else:  # sell
-            send_quantity = format_amount(float(quantity), base_symbol)
-            send_symbol = base_symbol
-
-        action = f"{order_type}:{format_amount(float(quantity), base_symbol)} {base_symbol}:{format_amount(float(price), quote_symbol, is_price=True)} {quote_symbol}"
-        
-        # Only show debug info if verbose mode is enabled
-        if self.client.verbose:
-            print("\n🔍 Debug Information:")
-            print(f"Send Amount: {send_quantity} {send_symbol}")
-            print(f"Action Memo: {action}")
-        
-        return self.client.transfer(
-            from_account=account,
-            to_account=contract,
-            quantity=f"{send_quantity} {send_symbol}",
-            memo=action
-        )
+                print(f"❌ Order failed: {result.get('error', 'Unknown error')}")
+            
+            return result
+                
+        except Exception as e:
+            print(f"❌ Error placing order: {str(e)}")
+            return {"success": False, "error": str(e)}
 
     def fetch_order_book(self, quote_symbol: str, base_symbol: str) -> dict:
         """Fetch the complete order book for a trading pair."""

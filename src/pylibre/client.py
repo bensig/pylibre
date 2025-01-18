@@ -5,6 +5,7 @@ import json
 from dotenv import load_dotenv
 import requests
 import sys
+import yaml
 
 def extract_error_message(error_json):
     """Extract the relevant error message from a JSON error response"""
@@ -48,50 +49,55 @@ class LibreClient:
         'mainnet': 'https://lb.libre.org'
     }
 
-    def __init__(self, api_url=None, verbose=False, env_file='.env.testnet'):
-        """Initialize LibreClient with automatic key loading.
+    def __init__(self, api_url=None, verbose=False, network='testnet', config_path='config/config.yaml'):
+        """Initialize LibreClient with config-based key loading.
         
         Args:
-            api_url (str, optional): Override API endpoint URL. If None, uses env-based default
+            api_url (str, optional): Override API endpoint URL. If None, uses config-based default
             verbose (bool): Enable verbose logging
-            env_file (str): Environment file to load keys from
+            network (str): Network to use ('mainnet' or 'testnet')
+            config_path (str): Path to config YAML file
         """
-        # Determine environment from env_file name
-        env = 'mainnet' if 'mainnet' in env_file else 'testnet'
+        self.network = network
         
-        # Use provided API URL or default based on environment
-        self.api_url = api_url or self.ENDPOINTS[env]
+        # Use provided API URL or load from config
+        self.api_url = api_url or self.ENDPOINTS[network]
         self.private_keys = {}
         self.net = Net(host=self.api_url)
         self.verbose = verbose
         
-        # Automatically load keys on initialization
-        self.load_account_keys(env_file)
+        # Load keys from config
+        self.load_account_keys(config_path)
         
         if self.verbose:
             print(f"Initialized LibreClient with {len(self.private_keys)} accounts")
             print(f"Using API endpoint: {self.api_url}")
 
-    def load_account_keys(self, env_file='.env.testnet'):
-        """Load private keys from an environment file."""
+    def load_account_keys(self, config_path):
+        """Load private keys from config YAML file."""
         if self.verbose:
-            print(f"Loading environment from: {env_file}")
-        load_dotenv(env_file)
-        
-        # Print all environment variables starting with ACCOUNT_
-        if self.verbose:
-            for key in os.environ:
-                if key.startswith("ACCOUNT_"):
-                    print(f"Found key: {key}")
+            print(f"Loading config from: {config_path}")
             
-        self.private_keys = {
-            key.replace("ACCOUNT_", "").lower(): os.getenv(key)
-            for key in os.environ if key.startswith("ACCOUNT_")
-        }
-        
-        # Print the loaded private keys (with keys masked)
-        if self.verbose:
-            print("Loaded private keys for accounts:", list(self.private_keys.keys()))
+        try:
+            with open(config_path, 'r') as f:
+                config = yaml.safe_load(f)
+            
+            # Get network configuration
+            network_config = config.get('networks', {}).get(self.network, {})
+            self.private_keys = network_config.get('private_keys', {})
+            
+            # Update API URL if not explicitly provided
+            if not self.api_url and 'api_url' in network_config:
+                self.api_url = network_config['api_url']
+                self.net = Net(host=self.api_url)
+            
+            if self.verbose:
+                print("Loaded private keys for accounts:", list(self.private_keys.keys()))
+                
+        except Exception as e:
+            if self.verbose:
+                print(f"Error loading config: {str(e)}")
+            raise
 
     def format_response(self, success, data=None, error=None):
         """Standardize response format across all methods"""
@@ -112,16 +118,18 @@ class LibreClient:
     def get_currency_balance(self, account, symbol, contract=None):
         """Get currency balance for an account."""
         try:
-            # Auto-detect contract if not specified
+            # Auto-detect contract and precision if not specified
             if contract is None:
                 contract_map = {
-                    "USDT": "usdt.libre",
-                    "BTC": "btc.libre",
-                    "LIBRE": "eosio.token"
+                    "USDT": {"contract": "usdt.libre", "precision": 8},
+                    "BTC": {"contract": "btc.libre", "precision": 8},
+                    "LIBRE": {"contract": "eosio.token", "precision": 4}
                 }
-                contract = contract_map.get(symbol.upper())
-                if not contract:
+                token_info = contract_map.get(symbol.upper())
+                if not token_info:
                     raise ValueError(f"Cannot auto-detect contract for symbol: {symbol}. Please specify contract.")
+                contract = token_info["contract"]
+                precision = token_info["precision"]
             
             if self.verbose:
                 print(f"Using contract: {contract} for symbol: {symbol}")
@@ -137,12 +145,11 @@ class LibreClient:
             response.raise_for_status()
             balances = response.json()
             
-            # Return first balance or zero balance if none found
+            # Return first balance or zero balance with correct precision
             if balances:
                 return balances[0]
             else:
-                decimals = 4 if symbol.upper() == "LIBRE" else 8
-                return f"0.{'0' * decimals} {symbol}"
+                return f"0.{'0' * precision} {symbol}"
 
         except Exception as e:
             if self.verbose:
@@ -309,6 +316,14 @@ class LibreClient:
                 return self.format_response(False, 
                     error=f"No contract specified for token {symbol} and no default contract known.")
 
+            if self.verbose:
+                print(f"\nTransfer Details:")
+                print(f"From: {from_account}")
+                print(f"To: {to_account}")
+                print(f"Amount: {quantity}")
+                print(f"Contract: {contract}")
+                print(f"Memo: {memo}")
+
             # Create transfer data
             action_data = [
                 Data(name="from", value=types.Name(from_account)),
@@ -341,8 +356,13 @@ class LibreClient:
             signed_transaction = linked_transaction.sign(key=private_key)
             response = signed_transaction.send()
 
+            # Check if we got a valid transaction ID
+            tx_id = response.get("transaction_id")
+            if not tx_id:
+                return self.format_response(False, error="Transaction rejected by the blockchain")
+
             return self.format_response(True, data={
-                "transaction_id": response.get("transaction_id")
+                "transaction_id": tx_id
             })
 
         except Exception as e:

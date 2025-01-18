@@ -65,11 +65,10 @@ def mock_transaction():
 
 @pytest.fixture
 def client(mock_net, mock_types, mock_action, mock_data, mock_auth, mock_transaction):
-    client = LibreClient("https://testnet.libre.org")
-    client.private_keys = {
-        "testactor": "PRIVATE_KEY_PLACEHOLDER",
-        "testsender": "PRIVATE_KEY_PLACEHOLDER"
-    }
+    client = LibreClient(
+        network='testnet',
+        config_path='tests/fixtures/test_config.yaml'
+    )
     return client
 
 def test_execute_action_success(client):

@@ -2,9 +2,12 @@ from pylibre import LibreClient
 import json
 import time
 
-# Initialize client
-client = LibreClient("https://testnet.libre.org", verbose=True)
-client.load_account_keys('.env.testnet')
+# Initialize client with YAML config
+client = LibreClient(
+    network='testnet',
+    config_path='config/config.yaml',
+    verbose=True
+)
 
 # Verify private keys are loaded
 if not client.private_keys:
