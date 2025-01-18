@@ -17,17 +17,32 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
-def load_price_sources(config_path: str = "config/config.yaml") -> Dict:
+def load_price_sources(config_path="config/config.yaml"):
     """Load price source configurations from config file."""
     with open(config_path) as f:
         config = yaml.safe_load(f)
     
     price_sources = {}
+    
+    # Check for global price sources
+    if "price_sources" in config:
+        price_sources.update(config["price_sources"])
+    
+    # Also check strategy groups for additional price sources
     for group in config["strategy_groups"].values():
         if "price_sources" in group:
             for pair, source_config in group["price_sources"].items():
                 if pair not in price_sources:
                     price_sources[pair] = source_config
+    
+    if not price_sources:
+        logging.warning("No price sources found in config file")
+        # Add default Binance BTC/USDT price source
+        price_sources["BTC/USDT"] = {
+            "source": "binance",
+            "symbol": "BTCUSDT"
+        }
+    
     return price_sources
 
 async def fetch_and_store_prices(config_path: str) -> None:
