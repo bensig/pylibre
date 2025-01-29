@@ -2,118 +2,73 @@
 import argparse
 import sys
 from pathlib import Path
-import json
-import asyncio
-import signal
-from typing import Dict, Any
-import logging
 import subprocess
-
-# Add project root to Python path
-sys.path.append(str(Path(__file__).parent.parent))
-
+import signal
 from pylibre.manager.config_manager import ConfigManager
-from pylibre.manager.trading_manager import TradingManager
+from pylibre.utils.logger import StrategyLogger, LogLevel
 
-class ServiceManager:
-    def __init__(self, config_manager: ConfigManager, strategy_group: str):
-        self.config_manager = config_manager
-        self.strategy_group = strategy_group
-        self.group_config = config_manager.get_strategy_group(strategy_group)
-        self.price_fetcher_process = None
-        self.running = True
-        self.logger = self._setup_logging()
-
-    def _setup_logging(self) -> logging.Logger:
-        logger = logging.getLogger("ServiceManager")
-        logger.setLevel(logging.INFO)
-        return logger
-
-    async def start_price_fetcher(self):
-        """Start the price fetcher script as a subprocess."""
-        if "price_sources" in self.group_config:
-            script_path = Path(__file__).parent / "fetch_prices.py"
-            self.logger.info(f"Starting price fetcher: {script_path}")
-            
-            # Start the price fetcher script as a subprocess
-            self.price_fetcher_process = subprocess.Popen(
-                [sys.executable, str(script_path)],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
-            )
-            self.logger.info("Price fetcher started")
-
-    async def stop_price_fetcher(self):
-        """Stop the price fetcher subprocess."""
-        if self.price_fetcher_process:
-            self.logger.info("Stopping price fetcher")
-            self.price_fetcher_process.terminate()
-            try:
-                self.price_fetcher_process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self.price_fetcher_process.kill()
-            self.logger.info("Price fetcher stopped")
-
-    def handle_shutdown(self, signum, frame):
-        """Handle shutdown signals."""
-        self.logger.info("Shutdown signal received")
-        self.running = False
-
-    async def run(self):
-        """Run the service manager."""
-        # Setup signal handlers
-        signal.signal(signal.SIGINT, self.handle_shutdown)
-        signal.signal(signal.SIGTERM, self.handle_shutdown)
-
-        try:
-            # Start price fetcher for BTC/USDT if needed
-            await self.start_price_fetcher()
-
-            # TODO: Start trading manager here in next phase
-            
-            # Keep running until shutdown
-            while self.running:
-                if self.price_fetcher_process:
-                    # Check if price fetcher is still running
-                    if self.price_fetcher_process.poll() is not None:
-                        self.logger.error("Price fetcher process died, restarting...")
-                        await self.start_price_fetcher()
-                await asyncio.sleep(1)
-
-        finally:
-            # Cleanup
-            await self.stop_price_fetcher()
-
-def print_strategy_group_info(group_name: str, group: dict) -> None:
-    """Print information about a strategy group."""
-    print(f"\nStrategy Group: {group_name}")
-    print(f"Description: {group.get('description', 'No description')}")
-    print(f"Network: {group['network']}")
-    print(f"Trading Pairs: {', '.join(group['pairs'])}")
-    
-    print("\nStrategies:")
-    for strategy in group['strategies']:
-        print(f"\n  {strategy['name']}:")
-        print(f"    Accounts: {', '.join(strategy['accounts'])}")
-        print(f"    Parameters:")
-        for key, value in strategy.get('parameters', {}).items():
-            print(f"      {key}: {value}")
-
-async def main():
-    parser = argparse.ArgumentParser(description='Run trading strategies')
+def main():
+    parser = argparse.ArgumentParser(description='Run multiple trading strategies')
     parser.add_argument('strategy_group', help='Strategy group to run')
     parser.add_argument('--config', default='config/config.yaml', help='Path to config file')
     args = parser.parse_args()
-    
+
+    logger = StrategyLogger("TradingManager", level=LogLevel.INFO)
+    processes = []
+
     try:
+        # Load configuration
         config_manager = ConfigManager(args.config)
-        trading_manager = TradingManager(config_manager)
-        await trading_manager.start_all(args.strategy_group)
+        group_config = config_manager.get_strategy_group(args.strategy_group)
+        
+        if not group_config:
+            logger.error(f"Strategy group {args.strategy_group} not found")
+            sys.exit(1)
+
+        # Start each strategy using run_strategy.py
+        for pair in group_config["pairs"]:
+            base_symbol, quote_symbol = pair.split("/")
+            
+            for strategy_config in group_config["strategies"]:
+                account = strategy_config["account"]
+                strategy_name = strategy_config["name"]
+                
+                cmd = [
+                    sys.executable,
+                    "scripts/run_strategy.py",
+                    "--account", account,
+                    "--strategy", strategy_name,
+                    "--base", base_symbol,
+                    "--quote", quote_symbol,
+                    "--config", args.config
+                ]
+                
+                process = subprocess.Popen(cmd)
+                processes.append(process)
+                logger.info(f"Started {strategy_name} for {account} on {pair}")
+
+        def handle_shutdown(signum, frame):
+            logger.info("Shutting down all strategies...")
+            for p in processes:
+                p.terminate()
+            sys.exit(0)
+
+        signal.signal(signal.SIGINT, handle_shutdown)
+        signal.signal(signal.SIGTERM, handle_shutdown)
+
+        # Wait for all processes
+        for p in processes:
+            p.wait()
+
     except KeyboardInterrupt:
-        print("\nShutting down...")
+        logger.info("Received keyboard interrupt, shutting down...")
+        for p in processes:
+            p.terminate()
     except Exception as e:
-        print(f"Error: {e}")
+        logger.error(f"Error: {e}")
+        for p in processes:
+            p.terminate()
         sys.exit(1)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

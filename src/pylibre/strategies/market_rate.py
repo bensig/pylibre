@@ -77,3 +77,13 @@ class MarketRateStrategy(BaseStrategy):
             self.logger.error(f"Error placing market rate orders: {e}")
             return False
 
+    def _get_available_balance(self) -> Decimal:
+        """Get available balance for trading."""
+        try:
+            balance = self.client.get_currency_balance(self.account, self.base_symbol)
+            self.logger.debug(f"{self.account} balance: {balance} {self.base_symbol}")
+            return Decimal(str(balance))
+        except Exception as e:
+            self.logger.error(f"❌ {self.account}: Error getting balance: {e}")
+            return Decimal('0')
+

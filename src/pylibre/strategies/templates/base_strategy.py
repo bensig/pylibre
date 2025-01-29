@@ -8,6 +8,7 @@ import time
 from decimal import Decimal, ROUND_DOWN
 from pylibre.utils.shared_data import read_price
 from pylibre.utils.logger import LogLevel
+import decimal
 
 DEFAULT_COIN_LIMITS = {
     'USDT': {
@@ -94,34 +95,55 @@ class BaseStrategy(ABC):
             bool: Success status of cancellation
         """
         try:
+            # Get all orders first
             order_book = self.dex.fetch_order_book(
                 quote_symbol=self.quote_symbol,
                 base_symbol=self.base_symbol
             )
             
-            # Cancel bids
-            for bid in order_book["bids"]:
-                if bid["account"] == self.account:
-                    self.dex.cancel_order(
-                        account=self.account,
-                        order_id=bid['identifier'],
-                        quote_symbol=self.quote_symbol,
-                        base_symbol=self.base_symbol
-                    )
+            our_orders = (
+                [order for order in order_book["bids"] if order["account"] == self.account] +
+                [order for order in order_book["offers"] if order["account"] == self.account]
+            )
             
-            # Cancel offers
-            for offer in order_book["offers"]:
-                if offer["account"] == self.account:
-                    self.dex.cancel_order(
-                        account=self.account,
-                        order_id=offer['identifier'],
-                        quote_symbol=self.quote_symbol,
-                        base_symbol=self.base_symbol
-                    )
+            if not our_orders:
+                self.logger.info(f"✨ No orders found for {self.account}")
+                return True
+                
+            self.logger.info(f"Found {len(our_orders)} orders to cancel")
             
-            return True
+            # Cancel orders one by one
+            successful = 0
+            failed = 0
+            
+            for order in our_orders:
+                if not self.running:  # Check if we should stop
+                    break
+                    
+                result = self.dex.cancel_order(
+                    account=self.account,
+                    order_id=order['identifier'],
+                    quote_symbol=self.quote_symbol,
+                    base_symbol=self.base_symbol
+                )
+                
+                if result.get("success"):
+                    successful += 1
+                    self.logger.info(f"✅ Cancelled order {order['identifier']}")
+                else:
+                    failed += 1
+                    self.logger.error(f"❌ Failed to cancel order {order['identifier']}: {result.get('error')}")
+                
+                time.sleep(1)  # Same delay as cancel_all_orders.py
+            
+            self.logger.info(f"\n📊 Summary:")
+            self.logger.info(f"✅ Successfully cancelled: {successful}")
+            self.logger.info(f"❌ Failed to cancel: {failed}")
+            
+            return successful > 0 or len(our_orders) == 0
+            
         except Exception as e:
-            print(f"Error cancelling orders: {e}")
+            self.logger.error(f"Error cancelling orders: {e}")
             return False
 
     def run(self) -> None:
@@ -150,22 +172,11 @@ class BaseStrategy(ABC):
     def cleanup(self):
         """Clean up any open orders when the strategy stops."""
         try:
+            self.running = False  # Set this first to stop any ongoing operations
             self.logger.info(f"Cleaning up strategy for {self.account}...")
-            
-            # Cancel all orders for this trading pair
-            result = self.dex.cancel_all_orders(
-                self.account,
-                self.quote_symbol,
-                self.base_symbol
-            )
-            
-            if result.get("success"):
-                self.logger.info("Successfully cancelled all orders")
-            else:
-                self.logger.error(f"Failed to cancel orders: {result.get('error')}")
-                
+            self.cancel_orders()  # Use our improved cancel_orders method
         except Exception as e:
-            self.logger.error(f"Error during cleanup: {e}")
+            self.logger.error(f"❌ {self.account}: Error during cleanup: {e}")
         finally:
             self.running = False
     def _get_order_limits(self) -> tuple[Decimal, Decimal]:
@@ -195,19 +206,51 @@ class BaseStrategy(ABC):
 
     def _get_available_balance(self) -> Decimal:
         """Get available balance for trading."""
-        min_order, max_order = self._get_order_limits()
-        
-        balance = self.client.get_currency_balance(self.account, self.base_symbol)
-        print(f"\nBalance check:")
-        print(f"Raw balance response: {balance}")
-        
-        if isinstance(balance, str):
-            amount = Decimal(balance.split()[0])
-            print(f"Parsed balance: {amount} {self.base_symbol}")
-            return max(min_order, min(max_order, amount))
-        
-        print("No balance found!")
-        return Decimal('0')
+        try:
+            balances = self.client.get_currency_balance(self.account, self.base_symbol)
+            self.logger.debug(f"Raw balance response for {self.account} {self.base_symbol}: {balances}")
+            
+            if not balances:
+                self.logger.error(f"No balance found for {self.account} {self.base_symbol}")
+                return Decimal('0')
+            
+            if not isinstance(balances, list):
+                self.logger.error(f"Expected list response, got {type(balances)}: {balances}")
+                return Decimal('0')
+            
+            # get_currency_balance returns a list of strings like ["123.4567 SYMBOL"]
+            if not balances[0]:
+                self.logger.error(f"Empty balance string for {self.account}")
+                return Decimal('0')
+                
+            balance_str = balances[0]
+            self.logger.debug(f"Processing balance string: '{balance_str}'")
+            
+            parts = balance_str.split()
+            if len(parts) != 2:
+                self.logger.error(f"Invalid balance format: '{balance_str}'")
+                return Decimal('0')
+                
+            amount = parts[0]
+            symbol = parts[1]
+            
+            if symbol != self.base_symbol:
+                self.logger.error(f"Symbol mismatch: expected {self.base_symbol}, got {symbol}")
+                return Decimal('0')
+                
+            try:
+                balance = Decimal(amount)
+                self.logger.info(f"{self.account} balance: {balance} {symbol}")
+                return balance
+            except decimal.InvalidOperation as e:
+                self.logger.error(f"Failed to convert '{amount}' to Decimal: {e}")
+                return Decimal('0')
+            
+        except Exception as e:
+            self.logger.error(f"Error getting balance for {self.account}: {str(e)}")
+            import traceback
+            self.logger.debug(f"Balance error traceback: {traceback.format_exc()}")
+            return Decimal('0')
 
     def place_distributed_orders(self, base_price: Decimal, min_spread: Decimal, max_spread: Decimal) -> bool:
         """Place multiple orders with configurable distribution and spacing."""
@@ -308,46 +351,33 @@ class BaseStrategy(ABC):
         precision = self._get_precision(symbol)
         return f"{quantity:.{precision}f}"
 
-    def _place_single_order(self, order_type: str, quantity: str, 
-                           price: Decimal, order_num: int) -> bool:
-        """Place a single order with error handling."""
+    def _place_single_order(self, order_type: str, quantity: str, price: Decimal, order_num: int) -> bool:
+        """Place a single order with proper logging."""
         try:
-            min_order, _ = self._get_order_limits()
-            
-            # Convert quantity and price to Decimal for calculations
-            quantity_decimal = Decimal(str(quantity))
-            price_decimal = Decimal(str(price))
-            
-            # Check minimum order size
-            if quantity_decimal < min_order:
-                self.logger.error(
-                    f"❌ Order quantity {quantity_decimal} {self.base_symbol} "
-                    f"below minimum {min_order} {self.base_symbol}"
-                )
+            # Validate quantity and price
+            qty_decimal = Decimal(quantity)
+            if qty_decimal <= Decimal('0'):
+                self.logger.error(f"❌ {self.account}: Invalid quantity: {quantity}")
                 return False
-            
-            # Calculate total value in BTC
-            total_value = quantity_decimal * price_decimal
-            
-            # Check if total value is at least 1 satoshi (0.00000001 BTC)
-            if self.quote_symbol == 'BTC' and total_value < Decimal('0.00000001'):
-                self.logger.error(
-                    f"❌ Total order value {total_value:.10f} BTC "
-                    f"({quantity_decimal} {self.base_symbol} * {price_decimal:.10f} BTC) "
-                    f"is below minimum of 0.00000001 BTC (1 satoshi)"
-                )
+                
+            if price <= Decimal('0'):
+                self.logger.error(f"❌ {self.account}: Invalid price: {price}")
                 return False
 
-            # Format price with 10 decimal places for BTC
+            # Format price based on quote currency
             if self.quote_symbol == 'BTC':
-                price_str = f"{price_decimal:.10f}"
+                price_str = f"{price:.8f}"
             else:
-                price_str = f"{price_decimal:.8f}"
+                price_str = f"{price:.2f}"
+                
+            self.logger.info(
+                f"Placing {order_type} order: {quantity} {self.base_symbol} @ {price_str} {self.quote_symbol}"
+            )
 
             result = self.dex.place_order(
                 account=self.account,
                 order_type=order_type,
-                quantity=str(quantity),
+                quantity=quantity,
                 price=price_str,
                 quote_symbol=self.quote_symbol,
                 base_symbol=self.base_symbol
@@ -355,16 +385,11 @@ class BaseStrategy(ABC):
             
             if result.get("success"):
                 emoji = '💰' if order_type == 'sell' else '💸'
-                log_msg = (
-                    f"{self.account}: {order_type.upper()} {quantity} {self.base_symbol} "
-                    f"at {price_str} {self.quote_symbol} "
-                    f"(Total: {total_value:.8f} {self.quote_symbol})"
-                )
-                self.logger.info(f"{emoji} {log_msg}")
+                self.logger.info(f"{emoji} {self.account}: {order_type.upper()} {quantity} @ {price_str}")
                 return True
             else:
                 error = result.get('error', 'Unknown error')
-                self.logger.error(f"❌ {self.account}: {order_type.title()} order #{order_num+1} failed: {error}")
+                self.logger.error(f"❌ {self.account}: {order_type.title()} order failed: {error}")
                 return False
                 
         except Exception as e:

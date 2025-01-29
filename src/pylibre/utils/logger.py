@@ -22,7 +22,7 @@ class StrategyLogger:
         
         # Prevent duplicate handlers
         if not self.logger.handlers:
-            # File handler only - no console handler
+            # File handler - detailed logging
             timestamp = datetime.now().strftime("%Y%m%d")
             file_handler = logging.FileHandler(
                 f"{log_dir}/{strategy_name}_{timestamp}.log"
@@ -31,7 +31,15 @@ class StrategyLogger:
                 '%(asctime)s | %(levelname)s | %(message)s'
             )
             file_handler.setFormatter(file_formatter)
+            file_handler.setLevel(logging.DEBUG)  # Log everything to file
             self.logger.addHandler(file_handler)
+            
+            # Console handler - minimal logging
+            console_handler = logging.StreamHandler()
+            console_formatter = logging.Formatter('%(message)s')
+            console_handler.setFormatter(console_formatter)
+            console_handler.setLevel(logging.WARNING)  # Only warnings and errors to console
+            self.logger.addHandler(console_handler)
         
     def debug(self, msg: str) -> None:
         self.logger.debug(msg)
@@ -44,3 +52,8 @@ class StrategyLogger:
         
     def error(self, msg: str) -> None:
         self.logger.error(msg)
+
+    def trade(self, msg: str) -> None:
+        """Special method for trade-related messages - goes to both console and file"""
+        self.logger.info(msg)
+        print(msg)  # Always show trades in console
