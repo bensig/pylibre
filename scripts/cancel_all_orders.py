@@ -76,29 +76,40 @@ def main():
         # Initialize client with network configuration
         client = LibreClient(api_url=network_config['api_url'])
         
-        # Get orders
-        print(f"🔍 Fetching orders for {args.account} on {args.pair}...")
-        orders = get_orders_to_cancel(client, args.account, args.pair)
+        total_successful = 0
+        total_failed = 0
         
-        if not orders:
-            print("✨ No orders found")
-            return
+        while True:
+            # Get orders
+            print(f"🔍 Fetching orders for {args.account} on {args.pair}...")
+            orders = get_orders_to_cancel(client, args.account, args.pair)
             
-        print(f"Found {len(orders)} orders to cancel")
-        
-        # Cancel orders
-        successful = 0
-        failed = 0
-        
-        for order in orders:
-            if cancel_order_direct(client, args.account, order['identifier'], args.pair):
-                successful += 1
-            else:
-                failed += 1
+            if not orders:
+                print("✨ No more orders found")
+                break
                 
-        print(f"\n📊 Summary:")
-        print(f"✅ Successfully cancelled: {successful}")
-        print(f"❌ Failed to cancel: {failed}")
+            print(f"Found {len(orders)} orders to cancel")
+            
+            # Cancel orders
+            successful = 0
+            failed = 0
+            
+            for order in orders:
+                if cancel_order_direct(client, args.account, order['identifier'], args.pair):
+                    successful += 1
+                else:
+                    failed += 1
+            
+            total_successful += successful
+            total_failed += failed
+            
+            print(f"\n📊 Batch Summary:")
+            print(f"✅ Successfully cancelled: {successful}")
+            print(f"❌ Failed to cancel: {failed}")
+        
+        print(f"\n📊 Final Summary:")
+        print(f"✅ Total successfully cancelled: {total_successful}")
+        print(f"❌ Total failed to cancel: {total_failed}")
         
     except Exception as e:
         print(f"❌ Error: {e}")
