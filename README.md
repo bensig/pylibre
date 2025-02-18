@@ -97,7 +97,7 @@ python scripts/run_trading.py btc_market_making --config config/config.yaml
 
 Run a specific strategy
 ```bash
-python scripts/run_strategy.py --account myaccount --strategy RandomWalkStrategy --base BTC --quote USDT
+python scripts/run_strategy.py --account myaccount --strategy OrderBookFillerStrategy --base BTC --quote USDT
 ```
 
 Cancel all orders for an account
@@ -107,7 +107,7 @@ python scripts/cancel_all_orders.py --account myaccount --pair BTC/USDT
 
 Run a strategy with a specific account
 ```bash
-python scripts/run_strategy.py --account myaccount --strategy RandomWalkStrategy --base BTC --quote USDT
+python scripts/run_strategy.py --account myaccount --strategy OrderBookFillerStrategy --base BTC --quote USDT
 ```
 
 ## Usage
@@ -127,8 +127,7 @@ balance = client.get_currency_balance("usdt.libre", "myaccount", "USDT")
 ### Trading Strategies
 
 Available strategies:
-- `RandomWalkStrategy`: Simple random price movement strategy
-- `OrderBookMakerStrategy`: Market making strategy with configurable spread
+- `OrderBookFillerStrategy`: Market making strategy with configurable spread
 - `MarketRateStrategy`: Price tracking strategy based on external markets
 
 ## Development

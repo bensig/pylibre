@@ -3,12 +3,43 @@ from .client import LibreClient
 from decimal import Decimal, ROUND_DOWN
 
 class DexClient:
-    def __init__(self, client: LibreClient):
+    """Client for interacting with the DEX contract."""
+    
+    def __init__(self, client, contract="dex.libre"):
+        """Initialize the DEX client.
+        
+        Args:
+            client (LibreClient): The LibreClient instance to use for blockchain interactions
+            contract (str): The DEX contract account name (default: "dex.libre")
+        """
         self.client = client
+        self.contract = contract
 
-    def place_order(self, account, order_type, quantity, price, quote_symbol, base_symbol, contract="dex.libre"):
-        """Place an order on the DEX (bid or offer)."""
+    def place_order(self, account, order_type, quantity, price, quote_symbol, base_symbol):
+        """Place an order on the DEX (bid or offer).
+        
+        Args:
+            account (str): The account placing the order
+            order_type (str): Type of order ('buy' or 'sell')
+            quantity (str): Amount to trade with precision (e.g. "1.00000000 BTC")
+            price (str): Price per unit with precision (e.g. "50000.00000000 USDT")
+            quote_symbol (str): Symbol being quoted (e.g. "USDT")
+            base_symbol (str): Symbol being traded (e.g. "BTC")
+            
+        Returns:
+            dict: Response containing success status and transaction ID or error
+        """
         try:
+            # Log full parameters for debugging
+            print(f"Placing order with parameters:")
+            print(f"Account: {account}")
+            print(f"Order Type: {order_type}")
+            print(f"Quantity: {quantity}")
+            print(f"Price: {price}")
+            print(f"Quote Symbol: {quote_symbol}")
+            print(f"Base Symbol: {base_symbol}")
+            print(f"Contract: {self.contract}")
+            
             # Convert inputs to Decimal for precise calculation
             quantity_dec = Decimal(str(quantity))
             price_dec = Decimal(str(price))
@@ -24,28 +55,37 @@ class DexClient:
                 precision = 4 if base_symbol == 'LIBRE' else 8
                 send_quantity = f"{send_amount:.{precision}f}"
 
-            # Create the action memo - exact format that works
-            action = f"{order_type}:{quantity_dec:.4f} {base_symbol}:{price_dec:.10f} {quote_symbol}"
+            # Define precision for base and quote symbols
+            base_precision = 4 if base_symbol == 'LIBRE' else 8
+            quote_precision = 8  # USDT and BTC use 8 decimal places
+
+            # Create the action memo with correct precision for both symbols
+            action = f"{order_type}:{quantity_dec:.{base_precision}f} {base_symbol}:{price_dec:.{quote_precision}f} {quote_symbol}"
             
             print(f"Placing {order_type} order: {quantity} {base_symbol} @ {price} {quote_symbol}")
+            print(f"Transfer details:")
+            print(f"  From: {account}")
+            print(f"  To: {self.contract}")
+            print(f"  Amount: {send_quantity} {send_symbol}")
+            print(f"  Memo: {action}")
             
             result = self.client.transfer(
                 from_account=account,
-                to_account=contract,
+                to_account=self.contract,
                 quantity=f"{send_quantity} {send_symbol}",
                 memo=action
             )
 
             if result.get("success"):
                 print(f"✅ Order placed successfully")
+                return result.get("data", {}).get("transaction_id")
             else:
                 print(f"❌ Order failed: {result.get('error', 'Unknown error')}")
-            
-            return result
+                return None
                 
         except Exception as e:
             print(f"❌ Error placing order: {str(e)}")
-            return {"success": False, "error": str(e)}
+            return None
 
     def fetch_order_book(self, quote_symbol: str, base_symbol: str) -> dict:
         """Fetch the complete order book for a trading pair."""
@@ -61,7 +101,7 @@ class DexClient:
             
             while more:
                 response = self.client.get_table_rows(
-                    code="dex.libre",
+                    code=self.contract,
                     table="orderbook2",
                     scope=pair,
                     limit=1000,
@@ -121,7 +161,7 @@ class DexClient:
             pair = f"{base_symbol.lower()}{quote_symbol.lower()}"
             
             result = self.client.execute_action(
-                contract="dex.libre",
+                contract=self.contract,
                 action_name="cancelorder",
                 data={
                     "orderIdentifier": order_id,
