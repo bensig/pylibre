@@ -1,0 +1,25 @@
+[Unit]
+Description=Libre Strategy Monitoring Dashboard
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=libre
+Group=libre
+WorkingDirectory=/opt/libre/pylibre
+ExecStart=/opt/libre/pylibre/.venv/bin/python scripts/run_dashboard.py --host 0.0.0.0 --port ${DASHBOARD_PORT} --data-dir ${DATA_DIR}
+Restart=on-failure
+RestartSec=10
+Environment="DASHBOARD_PORT=5000"
+Environment="DATA_DIR=/opt/libre/pylibre/monitor_data"
+# Uncomment and modify these if needed for API keys or other secrets
+#EnvironmentFile=/etc/libre/env
+
+# Security settings
+ProtectSystem=full
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target 

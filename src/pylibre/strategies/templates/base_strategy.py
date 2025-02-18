@@ -35,6 +35,18 @@ DEFAULT_STRATEGY_PARAMS = {
 class BaseStrategy(ABC):
     """Base class for all trading strategies."""
     
+    QUOTE_PRECISION = {
+        'USDT': 8,
+        'BTC': 10,
+        'LIBRE': 8
+    }
+    
+    BASE_PRECISION = {
+        'BTC': 8,
+        'LIBRE': 8,
+        'ETH': 8
+    }
+    
     def __init__(
         self,
         client: LibreClient,
@@ -51,7 +63,7 @@ class BaseStrategy(ABC):
         self.quote_symbol = quote_symbol
         self.parameters = parameters
         self.logger = logger or StrategyLogger(f"Strategy_{account}", level=LogLevel.DEBUG)
-        self.dex = DexClient(client)
+        self.dex = DexClient(client, contract="dex.libre")  # Initialize with default contract
         self.running = True
 
         # Log initial configuration
@@ -62,6 +74,35 @@ class BaseStrategy(ABC):
             f"\n - Quote Symbol: {quote_symbol}"
             f"\n - Parameters: {parameters}"
         )
+
+    def normalize_price(self, price: Decimal) -> Decimal:
+        """Normalize price to the correct precision for the quote asset."""
+        precision = self.QUOTE_PRECISION.get(self.quote_symbol, 8)
+        return Decimal(str(price)).quantize(Decimal('1e-{}'.format(precision)), rounding=ROUND_DOWN)
+
+    def normalize_amount(self, amount: Decimal) -> Decimal:
+        """Normalize amount to the correct precision for the base asset."""
+        precision = self.BASE_PRECISION.get(self.base_symbol, 8)
+        return Decimal(str(amount)).quantize(Decimal('1e-{}'.format(precision)), rounding=ROUND_DOWN)
+
+    def log_order_result(self, order_type: str, amount: Decimal, price: Decimal, order_id: Optional[str], order_num: Optional[int] = None) -> None:
+        """Log order result to both file and CLI with appropriate detail levels."""
+        # Detailed logging to file
+        self.logger.debug(f"Placing {order_type} order with details:")
+        self.logger.debug(f"  Amount: {amount} {self.base_symbol}")
+        self.logger.debug(f"  Price: {price} {self.quote_symbol}")
+        self.logger.debug(f"  Account: {self.account}")
+        
+        # Simplified CLI output
+        order_desc = f"{order_type.capitalize()} order"
+        if order_num is not None:
+            order_desc = f"{order_desc} {order_num}"
+        
+        if order_id:
+            self.logger.info(f"{order_desc}: Success")
+            self.logger.debug(f"Order ID: {order_id}")
+        else:
+            self.logger.info(f"{order_desc}: Failed")
 
     @abstractmethod
     def generate_signal(self) -> Dict[str, Any]:
@@ -168,6 +209,7 @@ class BaseStrategy(ABC):
             self.logger.error(f"Error during cleanup: {e}")
         finally:
             self.running = False
+    
     def _get_order_limits(self) -> tuple[Decimal, Decimal]:
         """Get minimum and maximum order sizes for the current symbol."""
         # Get default limits for the symbol
@@ -353,7 +395,17 @@ class BaseStrategy(ABC):
                 base_symbol=self.base_symbol
             )
             
-            if result.get("success"):
+            # Handle both dictionary and string responses
+            if isinstance(result, dict) and result.get("success"):
+                emoji = '💰' if order_type == 'sell' else '💸'
+                log_msg = (
+                    f"{self.account}: {order_type.upper()} {quantity} {self.base_symbol} "
+                    f"at {price_str} {self.quote_symbol} "
+                    f"(Total: {total_value:.8f} {self.quote_symbol})"
+                )
+                self.logger.info(f"{emoji} {log_msg}")
+                return True
+            elif isinstance(result, str):  # Transaction ID as string indicates success
                 emoji = '💰' if order_type == 'sell' else '💸'
                 log_msg = (
                     f"{self.account}: {order_type.upper()} {quantity} {self.base_symbol} "
@@ -363,7 +415,7 @@ class BaseStrategy(ABC):
                 self.logger.info(f"{emoji} {log_msg}")
                 return True
             else:
-                error = result.get('error', 'Unknown error')
+                error = result.get('error', 'Unknown error') if isinstance(result, dict) else "Unknown error"
                 self.logger.error(f"❌ {self.account}: {order_type.title()} order #{order_num+1} failed: {error}")
                 return False
                 
@@ -485,8 +537,15 @@ class BaseStrategy(ABC):
             pair = f"{self.base_symbol}/{self.quote_symbol}"
             price_source = self.parameters.get('price_source', {})
             
-            # If there's a specific config with a fixed price, use that
-            if price_source and price_source.get('type') == 'fixed':
+            # Handle case where price_source is a string (e.g., 'fixed' or 'binance')
+            if isinstance(price_source, str):
+                # If it's a fixed price source, check for fixed_price parameter
+                if price_source == 'fixed':
+                    fixed_price = self.parameters.get('fixed_price')
+                    if fixed_price:
+                        return Decimal(str(fixed_price))
+            # Handle case where price_source is a dictionary with configuration
+            elif isinstance(price_source, dict) and price_source.get('type') == 'fixed':
                 price = price_source.get('price')
                 if price:
                     return Decimal(str(price))
@@ -510,9 +569,9 @@ class BaseStrategy(ABC):
         if market_price is None:
             return None
         
-        # Get min and max spreads from parameters
-        min_spread = Decimal(str(self.parameters['min_spread_percentage']))
-        max_spread = Decimal(str(self.parameters['max_spread_percentage']))
+        # Get min and max spreads from parameters with defaults
+        min_spread = Decimal(str(self.parameters.get('min_spread_percentage', 0.005)))  # Default 0.5%
+        max_spread = Decimal(str(self.parameters.get('max_spread_percentage', 0.02)))   # Default 2%
         
         self.logger.debug(
             f"Generating signal with spreads: {min_spread} to {max_spread}"

@@ -1,155 +1,146 @@
-# PyLibre
+# PyLibre Trading Strategies
 
-A Python client for interacting with the Libre blockchain.
+A comprehensive suite of trading strategies for the Libre blockchain, designed to create liquidity and market activity.
 
-## Project Structure
+## Overview
 
-```
-pylibre/
-├── config/ # Configuration files
-│ └── config.yaml # Main configuration
-├── src/
-│ └── pylibre/
-│ ├── cli.py # LibreClient command line interface
-│ ├── client.py # LibreClient core functionality
-│ ├── dex.py # DEX interaction methods
-│ ├── manager/ # System management
-│ │ ├── config_manager.py
-│ │ └── trading_manager.py
-│ ├── utils/ # Utility functions
-│ │ ├── binance_api.py
-│ │ └── shared_data.py
-│ └── strategies/ # Trading strategies
-│ ├── templates/
-│ └── random_walk.py
-│ └── orderbook_maker.py
-│ └── market_rate.py
-├── examples/ # Examples
-├── scripts/ # CLI tools
-└── tests/ # Unit tests
-```
+This project provides a set of trading strategies for the Libre blockchain, including:
 
-## Installation 
+- **OrderBookMakerStrategy**: Creates a spread of orders around a center price
+- **MarketPriceTrackerStrategy**: Monitors external market prices and updates the center price
+- **OrderBookAnimatorStrategy**: Creates the appearance of market activity by periodically canceling and replacing orders
+- **TradeSimulatorStrategy**: Creates the appearance of trades being filled
 
-Once on PyPi (coming soon), install with:
+These strategies can be run individually or together using the `StrategyCoordinator`.
+
+## Features
+
+- **Flexible Configuration**: Each strategy can be configured with a wide range of parameters
+- **Monitoring Dashboard**: Web-based dashboard for monitoring strategy performance
+- **Systemd Integration**: Run strategies as system services
+- **Coordination**: Manage multiple strategies for a trading pair
+
+## Installation
+
+### Prerequisites
+
+- Python 3.8+
+- Git
+- Libre account with API keys
+
+### Setup
+
+1. Clone the repository:
+
 ```bash
-pip install pylibre
-``
+git clone https://github.com/libre-org/pylibre.git
+cd pylibre
+```
 
-Or clone the repo and run:
+2. Create a virtual environment:
+
 ```bash
-pip install -e .
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+3. Configure the strategies:
+
+```bash
+cp config/strategies.example.yaml config/strategies.yaml
+```
+
+Edit the `config/strategies.yaml` file to configure your trading strategies.
+
+## Usage
+
+### Running Individual Strategies
+
+#### OrderBookMakerStrategy
+
+```bash
+python scripts/run_orderbook_maker.py --account your_account --base LIBRE --quote BTC
+```
+
+#### MarketPriceTrackerStrategy
+
+```bash
+python scripts/run_market_price_tracker.py --account your_account --base LIBRE --quote BTC
+```
+
+#### OrderBookAnimatorStrategy
+
+```bash
+python scripts/run_orderbook_animator.py --account your_account --base LIBRE --quote BTC
+```
+
+#### TradeSimulatorStrategy
+
+```bash
+python scripts/run_trade_simulator.py --account your_account --base LIBRE --quote BTC
+```
+
+### Running the Strategy Coordinator
+
+```bash
+python scripts/run_strategy_coordinator.py --account your_account --base LIBRE --quote BTC
+```
+
+### Running the Monitoring Dashboard
+
+```bash
+python scripts/run_dashboard.py
 ```
 
 ## Configuration
 
-### Main Configuration
+The `strategies.yaml` file contains the configuration for all strategies. Here's an example:
 
-Create a `config/config.yaml` file based on the `config/example.config.yaml` file.
+```yaml
+# API endpoint
+api_endpoint: "https://testnet.libre.org"
 
-Fill in the values for the networks, accounts, and strategies.
-
-You may also need to add credentials for external services:
-- Checking IP address location to ensure non-US trading compliance (IPInfo)
-- Accessing Binance API for price comparisons and market data (Binance)
-
-### CLI Usage
-
-Query table data:
-```bash
-# Get filtered rows from a table
-pylibre --api-url https://lb.libre.org table farm.libre account BTCUSD --lower-bound myaccount
-
-# Get all rows from a table
-pylibre --api-url https://testnet.libre.org table-all stake.libre stake stake.libre
+# Trading pairs configuration
+trading_pairs:
+  LIBREBTC:
+    market_maker:
+      num_orders: 30
+      min_spread_percentage: 0.01
+      max_spread_percentage: 0.15
+      quantity_distribution: "random"
+      update_interval_ms: 120000  # 2 minutes
+    
+    animator:
+      activity_level: "high"
+      orders_per_cycle: 5
+      cycle_interval_ms: 3000  # 3 seconds
+    
+    price_tracker:
+      source: "fixed"
+      update_interval_ms: 60000  # 1 minute
+      price_change_threshold: 0.01  # 1%
+      fallback_price: 0.0000002  # Default price for LIBRE/BTC
+      
+    simulator:
+      trade_frequency: "high"
+      trade_size_variation: "high"
+      price_range_percentage: 0.01
+      cycle_interval_ms: 15000
+      trades_per_cycle: 2
+      trade_pattern: "trend"
+      trend_direction: "up"
+      trend_strength: 0.7
 ```
 
-Transfer tokens:
-```bash
-# Simple transfer
-pylibre --api-url https://testnet.libre.org transfer myaccount recipient "1.00000000 USDT" "memo"
+## Production Deployment
 
-# Transfer with wallet unlock
-pylibre --api-url https://testnet.libre.org --unlock transfer usdt.libre myaccount recipient "1.00000000 USDT" "memo"
-```
+For production deployment, see the [Deployment Guide](docs/deployment_guide.md).
 
-Execute contract actions:
-```bash
-pylibre --api-url https://testnet.libre.org execute reward.libre updateall myaccount '{"max_steps":"500"}'
-```
+## Contributing
 
-Always specify the environment file when using the CLI:
-```bash
-# Basic format
-pylibre --api-url https://testnet.libre.org <command> [options]
-
-# Example transfer
-pylibre --api-url https://testnet.libre.org transfer dextester bentester "0.00001000 BTC" "memo"
-
-# Example table query
-pylibre --api-url https://testnet.libre.org table farm.libre account BTCUSD
-```
-
-Run a strategy group
-```bash
-python scripts/run_trading.py btc_market_making --config config/config.yaml
-```
-
-Run a specific strategy
-```bash
-python scripts/run_strategy.py --account myaccount --strategy RandomWalkStrategy --base BTC --quote USDT
-```
-
-Cancel all orders for an account
-```bash 
-python scripts/cancel_all_orders.py --account myaccount --pair BTC/USDT
-```
-
-Run a strategy with a specific account
-```bash
-python scripts/run_strategy.py --account myaccount --strategy RandomWalkStrategy --base BTC --quote USDT
-```
-
-## Usage
-
-### Python Client
-
-```python
-from pylibre import LibreClient
-
-# Initialize client
-client = LibreClient("https://testnet.libre.org")
-
-# Get balance
-balance = client.get_currency_balance("usdt.libre", "myaccount", "USDT")
-```
-
-### Trading Strategies
-
-Available strategies:
-- `RandomWalkStrategy`: Simple random price movement strategy
-- `OrderBookMakerStrategy`: Market making strategy with configurable spread
-- `MarketRateStrategy`: Price tracking strategy based on external markets
-
-## Development
-
-### Running Tests
-```bash
-pytest tests/
-```
-
-### Adding New Strategies
-
-1. Create a new strategy class in `src/pylibre/strategies/`
-2. Inherit from `BaseStrategy`
-3. Implement `generate_signal()` and any other required methods
-4. Add strategy configuration to `accounts.json`
-
-## Common Token Contracts
-- USDT: usdt.libre (8 decimals)
-- BTC: btc.libre (8 decimals)
-- LIBRE: eosio.token (4 decimals)
+Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
-MIT License
+This project is licensed under the MIT License - see the LICENSE file for details.

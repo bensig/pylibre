@@ -1,0 +1,286 @@
+{
+  "MarketPriceTrackerStrategy_dextester_BTC_USDT": {
+    "orders_placed": 0,
+    "orders_filled": 0,
+    "orders_cancelled": 0,
+    "errors": 0,
+    "warnings": 0,
+    "cycle_count": 0,
+    "last_cycle_duration_ms": 0,
+    "avg_cycle_duration_ms": 0,
+    "history": {
+      "timestamps": [],
+      "orders_placed": [],
+      "orders_filled": []
+    }
+  },
+  "TradeSimulatorStrategy_dextester_BTC_USDT": {
+    "orders_placed": 0,
+    "orders_filled": 0,
+    "orders_cancelled": 0,
+    "errors": 0,
+    "warnings": 0,
+    "cycle_count": 0,
+    "last_cycle_duration_ms": 0,
+    "avg_cycle_duration_ms": 0,
+    "history": {
+      "timestamps": [],
+      "orders_placed": [],
+      "orders_filled": []
+    }
+  },
+  "OrderBookMakerStrategy_dextester_BTC_USDT": {
+    "orders_placed": 0,
+    "orders_filled": 0,
+    "orders_cancelled": 0,
+    "errors": 0,
+    "warnings": 0,
+    "cycle_count": 0,
+    "last_cycle_duration_ms": 0,
+    "avg_cycle_duration_ms": 0,
+    "history": {
+      "timestamps": [],
+      "orders_placed": [],
+      "orders_filled": []
+    }
+  },
+  "OrderBookAnimatorStrategy_dextester_BTC_USDT": {
+    "orders_placed": 0,
+    "orders_filled": 0,
+    "orders_cancelled": 0,
+    "errors": 0,
+    "warnings": 0,
+    "cycle_count": 0,
+    "last_cycle_duration_ms": 0,
+    "avg_cycle_duration_ms": 0,
+    "history": {
+      "timestamps": [],
+      "orders_placed": [],
+      "orders_filled": []
+    }
+  },
+  "MarketPriceTrackerStrategy_dextester_LIBRE_BTC": {
+    "orders_placed": true,
+    "orders_filled": 0,
+    "orders_cancelled": 0,
+    "errors": 0,
+    "warnings": 0,
+    "cycle_count": 1,
+    "last_cycle_duration_ms": 0,
+    "avg_cycle_duration_ms": 15002,
+    "history": {
+      "timestamps": [
+        "2025-03-10T23:40:43.267666",
+        "2025-03-10T23:41:13.273244"
+      ],
+      "orders_placed": [
+        1,
+        1
+      ],
+      "orders_filled": []
+    }
+  },
+  "OrderBookMakerStrategy_dextester_LIBRE_BTC": {
+    "orders_placed": false,
+    "orders_filled": 0,
+    "orders_cancelled": 0,
+    "errors": 0,
+    "warnings": 0,
+    "cycle_count": 0,
+    "last_cycle_duration_ms": 11870,
+    "avg_cycle_duration_ms": 11870,
+    "history": {
+      "timestamps": [
+        "2025-03-10T23:40:55.641663"
+      ],
+      "orders_placed": [
+        0
+      ],
+      "orders_filled": []
+    }
+  },
+  "OrderBookAnimatorStrategy_dextester_LIBRE_BTC": {
+    "orders_placed": 0,
+    "orders_filled": 0,
+    "orders_cancelled": 0,
+    "errors": 0,
+    "warnings": 0,
+    "cycle_count": 0,
+    "last_cycle_duration_ms": 0,
+    "avg_cycle_duration_ms": 0,
+    "history": {
+      "timestamps": [],
+      "orders_placed": [],
+      "orders_filled": []
+    }
+  },
+  "TradeSimulatorStrategy_dextester_LIBRE_BTC": {
+    "orders_placed": 0,
+    "orders_filled": 0,
+    "orders_cancelled": 0,
+    "errors": 0,
+    "warnings": 0,
+    "cycle_count": 0,
+    "last_cycle_duration_ms": 0,
+    "avg_cycle_duration_ms": 0,
+    "history": {
+      "timestamps": [],
+      "orders_placed": [],
+      "orders_filled": []
+    }
+  },
+  "MarketPriceTrackerStrategy_bentester_LIBRE_BTC": {
+    "orders_placed": true,
+    "orders_filled": 0,
+    "orders_cancelled": 0,
+    "errors": 0,
+    "warnings": 0,
+    "cycle_count": 3,
+    "last_cycle_duration_ms": 0,
+    "avg_cycle_duration_ms": 45003,
+    "history": {
+      "timestamps": [
+        "2025-03-12T10:47:05.573200",
+        "2025-03-12T10:48:05.578500",
+        "2025-03-12T10:49:05.580212",
+        "2025-03-12T10:50:05.586959"
+      ],
+      "orders_placed": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "orders_filled": []
+    }
+  },
+  "OrderBookMakerStrategy_bentester_LIBRE_BTC": {
+    "orders_placed": true,
+    "orders_filled": 0,
+    "orders_cancelled": 0,
+    "errors": 0,
+    "warnings": 0,
+    "cycle_count": 1,
+    "last_cycle_duration_ms": 25028,
+    "avg_cycle_duration_ms": 85534,
+    "history": {
+      "timestamps": [
+        "2025-03-12T10:47:32.110752",
+        "2025-03-12T10:49:57.141801"
+      ],
+      "orders_placed": [
+        1,
+        1
+      ],
+      "orders_filled": []
+    }
+  },
+  "OrderBookAnimatorStrategy_bentester_LIBRE_BTC": {
+    "orders_placed": null,
+    "orders_filled": 0,
+    "orders_cancelled": 0,
+    "errors": 0,
+    "warnings": 0,
+    "cycle_count": 4,
+    "last_cycle_duration_ms": 11557,
+    "avg_cycle_duration_ms": 10407,
+    "history": {
+      "timestamps": [
+        "2025-03-12T10:47:11.206411",
+        "2025-03-12T10:47:22.944840",
+        "2025-03-12T10:47:35.292977",
+        "2025-03-12T10:47:48.210085",
+        "2025-03-12T10:48:00.772606"
+      ],
+      "orders_placed": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "orders_filled": []
+    }
+  },
+  "TradeSimulatorStrategy_bentester_LIBRE_BTC": {
+    "orders_placed": 0,
+    "orders_filled": 0,
+    "orders_cancelled": 0,
+    "errors": 0,
+    "warnings": 0,
+    "cycle_count": 31,
+    "last_cycle_duration_ms": 6269,
+    "avg_cycle_duration_ms": 5709,
+    "history": {
+      "timestamps": [
+        "2025-03-12T10:47:11.928480",
+        "2025-03-12T10:47:17.680256",
+        "2025-03-12T10:47:22.724894",
+        "2025-03-12T10:47:29.231821",
+        "2025-03-12T10:47:34.865714",
+        "2025-03-12T10:47:40.137737",
+        "2025-03-12T10:47:47.193654",
+        "2025-03-12T10:47:52.561728",
+        "2025-03-12T10:47:58.651739",
+        "2025-03-12T10:48:04.064850",
+        "2025-03-12T10:48:09.879732",
+        "2025-03-12T10:48:15.369659",
+        "2025-03-12T10:48:20.464029",
+        "2025-03-12T10:48:26.075025",
+        "2025-03-12T10:48:31.327518",
+        "2025-03-12T10:48:36.652942",
+        "2025-03-12T10:48:42.194881",
+        "2025-03-12T10:48:48.271228",
+        "2025-03-12T10:48:56.650919",
+        "2025-03-12T10:49:02.299160",
+        "2025-03-12T10:49:08.300394",
+        "2025-03-12T10:49:14.116199",
+        "2025-03-12T10:49:19.783353",
+        "2025-03-12T10:49:24.562006",
+        "2025-03-12T10:49:29.533269",
+        "2025-03-12T10:49:35.296938",
+        "2025-03-12T10:49:40.991929",
+        "2025-03-12T10:49:46.352898",
+        "2025-03-12T10:49:51.163874",
+        "2025-03-12T10:49:56.814843",
+        "2025-03-12T10:50:02.512691",
+        "2025-03-12T10:50:09.786695"
+      ],
+      "orders_placed": [],
+      "orders_filled": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ]
+    }
+  }
+}

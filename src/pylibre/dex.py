@@ -3,13 +3,66 @@ from .client import LibreClient
 from decimal import Decimal, ROUND_DOWN
 
 class DexClient:
-    def __init__(self, client: LibreClient):
+    """Client for interacting with the DEX contract."""
+    
+    def __init__(self, client, contract="dex.libre"):
+        """Initialize the DEX client.
+        
+        Args:
+            client (LibreClient): The LibreClient instance to use for blockchain interactions
+            contract (str): The DEX contract account name (default: "dex.libre")
+        """
         self.client = client
+        self.contract = contract
 
-    def place_order(self, account, order_type, quantity, price, quote_symbol, base_symbol, contract="dex.libre"):
-        """Place an order on the DEX (bid or offer)."""
+    def place_order(self, account, order_type, quantity, price, quote_symbol, base_symbol):
+        import re
+        """Place an order on the DEX (bid or offer).
+        
+        Args:
+            account (str): The account placing the order
+            order_type (str): Type of order ('buy' or 'sell')
+            quantity (str): Amount to trade with precision (e.g. "1.00000000 BTC")
+            price (str): Price per unit with precision (e.g. "50000.00000000 USDT")
+            quote_symbol (str): Symbol being quoted (e.g. "USDT")
+            base_symbol (str): Symbol being traded (e.g. "BTC")
+            
+        Returns:
+            dict: Response containing success status and transaction ID or error
+        """
         try:
+            # Log full parameters for debugging
+            print(f"Placing order with parameters:")
+            print(f"Account: {account}")
+            print(f"Order Type: {order_type}")
+            print(f"Quantity: {quantity}")
+            print(f"Price: {price}")
+            print(f"Quote Symbol: {quote_symbol}")
+            print(f"Base Symbol: {base_symbol}")
+            print(f"Contract: {self.contract}")
+            
+            # Define token specifications
+            TOKEN_SPECS = {
+                "BTC": {"contract": "btc.libre", "precision": 8},
+                "USDT": {"contract": "usdt.libre", "precision": 8},
+                "LIBRE": {"contract": "eosio.token", "precision": 4}
+            }
+            
+            # Get precision for base and quote symbols
+            base_precision = TOKEN_SPECS.get(base_symbol, {}).get("precision", 8)
+            quote_precision = TOKEN_SPECS.get(quote_symbol, {}).get("precision", 8)
+            
             # Convert inputs to Decimal for precise calculation
+            # Remove any existing symbol part if present in the input
+            if isinstance(quantity, str) and " " in quantity:
+                quantity = quantity.split()[0]
+            if isinstance(price, str) and " " in price:
+                price = price.split()[0]
+            
+            # Set higher precision for decimal calculations
+            from decimal import getcontext
+            getcontext().prec = 28
+                
             quantity_dec = Decimal(str(quantity))
             price_dec = Decimal(str(price))
 
@@ -17,35 +70,175 @@ class DexClient:
             if order_type == 'buy':
                 send_amount = quantity_dec * price_dec
                 send_symbol = quote_symbol
-                send_quantity = f"{send_amount:.8f}"
+                send_precision = TOKEN_SPECS.get(quote_symbol, {}).get("precision", 8)
+                send_quantity = f"{send_amount:.{send_precision}f}"
             else:  # sell
                 send_amount = quantity_dec
                 send_symbol = base_symbol
-                precision = 4 if base_symbol == 'LIBRE' else 8
-                send_quantity = f"{send_amount:.{precision}f}"
+                send_precision = TOKEN_SPECS.get(base_symbol, {}).get("precision", 8)
+                
+                # Special handling for BTC sell orders
+                if base_symbol == "BTC":
+                    # Ensure exactly 8 decimal places with no scientific notation
+                    formatted_amount = f"{send_amount:.8f}"
+                    
+                    # Ensure the formatted amount has exactly 8 decimal places
+                    parts = formatted_amount.split('.')
+                    if len(parts) == 2:
+                        integer_part, decimal_part = parts
+                        # Pad with zeros if needed
+                        decimal_part = decimal_part.ljust(8, '0')[:8]
+                        send_quantity = f"{integer_part}.{decimal_part}"
+                    else:
+                        send_quantity = f"{formatted_amount}.00000000"
+                    
+                    # Ensure we're not sending scientific notation
+                    if 'e' in send_quantity.lower():
+                        # Convert from scientific notation
+                        decimal_amount_str = format(send_amount, '.8f')
+                        send_quantity = decimal_amount_str
+                    
+                    # Check if the amount is too small (below minimum precision)
+                    min_btc_amount = Decimal('0.00000001')  # Minimum BTC amount (8 decimal places)
+                    if send_amount < min_btc_amount:
+                        print(f"❌ Error: BTC amount {send_amount} is below minimum precision of {min_btc_amount}")
+                        return None
+                    
+                    # Validate the final format to ensure it's exactly what the blockchain expects
+                    if not re.match(r'^\d+\.\d{8}$', send_quantity):
+                        # Force the correct format
+                        try:
+                            decimal_val = Decimal(send_quantity)
+                            send_quantity = f"{decimal_val:.8f}"
+                        except Exception as e:
+                            print(f"❌ Error formatting BTC amount: {e}")
+                            return None
+                    
+                    # Ensure the send_quantity exactly matches what's in the memo
+                    # This is critical for BTC sell orders to be accepted
+                    if order_type == 'sell':
+                        # Match the quantity in the memo exactly
+                        quantity_dec = Decimal(send_quantity)
+                else:
+                    send_quantity = f"{send_amount:.{send_precision}f}"
 
-            # Create the action memo - exact format that works
-            action = f"{order_type}:{quantity_dec:.4f} {base_symbol}:{price_dec:.10f} {quote_symbol}"
+            # Create the action memo with correct precision for both symbols
+            # For BTC, ensure exact formatting in the memo as well
+            if base_symbol == "BTC":
+                # Format quantity with exact 8 decimal places
+                formatted_quantity = f"{quantity_dec:.8f}"
+                parts = formatted_quantity.split('.')
+                if len(parts) == 2:
+                    integer_part, decimal_part = parts
+                    decimal_part = decimal_part.ljust(8, '0')[:8]
+                    formatted_quantity = f"{integer_part}.{decimal_part}"
+                
+                # Ensure price is also formatted correctly
+                formatted_price = f"{price_dec:.{quote_precision}f}"
+                price_parts = formatted_price.split('.')
+                if len(price_parts) == 2:
+                    price_integer, price_decimal = price_parts
+                    price_decimal = price_decimal.ljust(quote_precision, '0')[:quote_precision]
+                    formatted_price = f"{price_integer}.{price_decimal}"
+                
+                # Exactly match the format from successful CLI commands
+                action = f"{order_type}:{formatted_quantity} {base_symbol}:{formatted_price} {quote_symbol}"
+                
+                # For sell orders, ensure the send_quantity and memo quantity match exactly
+                if order_type == 'sell' and formatted_quantity != send_quantity:
+                    print(f"Warning: Adjusting send quantity to match memo quantity for BTC sell order")
+                    print(f"  Original: {send_quantity}")
+                    print(f"  Adjusted: {formatted_quantity}")
+                    send_quantity = formatted_quantity
+            else:
+                action = f"{order_type}:{quantity_dec:.{base_precision}f} {base_symbol}:{price_dec:.{quote_precision}f} {quote_symbol}"
             
-            print(f"Placing {order_type} order: {quantity} {base_symbol} @ {price} {quote_symbol}")
+            print(f"Placing {order_type} order: {quantity_dec:.{base_precision}f} {base_symbol} @ {price_dec:.{quote_precision}f} {quote_symbol}")
+            print(f"Transfer details:")
+            print(f"  From: {account}")
+            print(f"  To: {self.contract}")
+            print(f"  Amount: {send_quantity} {send_symbol}")
+            print(f"  Memo: {action}")
             
-            result = self.client.transfer(
-                from_account=account,
-                to_account=contract,
-                quantity=f"{send_quantity} {send_symbol}",
-                memo=action
-            )
+            # For BTC sell orders, ensure the contract is explicitly specified
+            if order_type == 'sell' and base_symbol == 'BTC':
+                contract = "btc.libre"
+                
+                # Match exactly the format used in the successful CLI command
+                # Ensure quantity has exactly 8 decimal places
+                exact_quantity = f"{Decimal(send_quantity):.8f}"
+                
+                # Ensure the memo format exactly matches the CLI format
+                exact_price = f"{Decimal(price):.8f}"
+                exact_memo = f"{order_type}:{exact_quantity} {base_symbol}:{exact_price} {quote_symbol}"
+                
+                print("\nDETAILED BTC SELL ORDER INFO:")
+                print(f"Exact quantity: {exact_quantity}")
+                print(f"Exact price: {exact_price}")
+                print(f"Exact memo: {exact_memo}")
+                print(f"Contract: {contract}")
+                
+                # Try with the exact format that worked in CLI
+                result = self.client.transfer(
+                    from_account=account,
+                    to_account=self.contract,
+                    quantity=f"{exact_quantity} {send_symbol}",
+                    memo=exact_memo,
+                    contract=contract
+                )
+            else:
+                result = self.client.transfer(
+                    from_account=account,
+                    to_account=self.contract,
+                    quantity=f"{send_quantity} {send_symbol}",
+                    memo=action
+                )
 
             if result.get("success"):
                 print(f"✅ Order placed successfully")
+                return result.get("data", {}).get("transaction_id")
             else:
-                print(f"❌ Order failed: {result.get('error', 'Unknown error')}")
-            
-            return result
+                error_msg = result.get('error', 'Unknown error')
+                print(f"❌ Order failed: {error_msg}")
+                
+                # Add detailed error info for BTC sell orders
+                if order_type == 'sell' and base_symbol == 'BTC':
+                    print("\nDETAILED ERROR INFO FOR BTC SELL ORDER:")
+                    print(f"Error message: {error_msg}")
+                    print(f"Account: {account}")
+                    print(f"Contract: {contract if 'contract' in locals() else 'Not specified'}")
+                    print(f"Quantity: {send_quantity} {send_symbol}")
+                    print(f"Memo: {action}")
+                    print("\nPlease compare with the successful CLI command format:")
+                    print("test.sh push action btc.libre transfer '[\"bentester\", \"dex.libre\", \"0.00010000 BTC\", \"sell:0.00010000 BTC:80000.00000000 USDT\"]' -p bentester@active")
+                
+                return None
                 
         except Exception as e:
             print(f"❌ Error placing order: {str(e)}")
-            return {"success": False, "error": str(e)}
+            
+            # Add stack trace for better debugging
+            import traceback
+            print("\nStack trace:")
+            traceback.print_exc()
+            
+            # Add detailed error info for BTC sell orders
+            if order_type == 'sell' and base_symbol == 'BTC':
+                print("\nDETAILED EXCEPTION INFO FOR BTC SELL ORDER:")
+                print(f"Exception: {str(e)}")
+                print(f"Account: {account}")
+                print(f"Quantity: {quantity}")
+                print(f"Price: {price}")
+                print(f"Base Symbol: {base_symbol}")
+                print(f"Quote Symbol: {quote_symbol}")
+                
+                # Print variables that might be available
+                if 'send_quantity' in locals():
+                    print(f"Send quantity: {send_quantity}")
+                if 'action' in locals():
+                    print(f"Memo: {action}")
+            
+            return None
 
     def fetch_order_book(self, quote_symbol: str, base_symbol: str) -> dict:
         """Fetch the complete order book for a trading pair."""
@@ -54,6 +247,7 @@ class DexClient:
             
             if self.client.verbose:
                 print(f"Fetching order book for {base_symbol}/{quote_symbol}...")
+                print(f"Fetching rows... (found 0 so far)")
             
             all_rows = []
             more = True
@@ -61,24 +255,33 @@ class DexClient:
             
             while more:
                 response = self.client.get_table_rows(
-                    code="dex.libre",
+                    code=self.contract,
                     table="orderbook2",
                     scope=pair,
-                    limit=1000,
-                    lower_bound=last_key
+                    limit=1000,  # Use a high limit to get more rows at once
+                    lower_bound=last_key if last_key else None
                 )
                 
                 if not response.get("success", False):
                     if self.client.verbose:
                         print(f"❌ Error fetching order book: {response.get('error', 'Unknown error')}")
-                    return None
+                    return {"bids": [], "offers": []}
                 
                 rows = response.get("rows", [])
                 all_rows.extend(rows)
                 
+                if self.client.verbose:
+                    print(f"Fetching rows... (found {len(all_rows)} so far)")
+                
                 more = response.get("more", False)
-                if more:
-                    last_key = response.get("next_key", "")
+                if more and len(rows) > 0:
+                    # Get the last identifier for pagination
+                    last_key = str(rows[-1].get("identifier", ""))
+                else:
+                    more = False
+            
+            if self.client.verbose:
+                print(f"Fetched {len(all_rows)} rows total")
             
             # Parse the rows into bids and offers
             bids = []
@@ -113,7 +316,7 @@ class DexClient:
         except Exception as e:
             if self.client.verbose:
                 print(f"❌ Error in fetch_order_book: {str(e)}")
-            return None
+            return {"bids": [], "offers": []}
 
     def cancel_order(self, account: str, order_id: int, quote_symbol: str, base_symbol: str) -> dict:
         """Cancel an order."""
@@ -121,7 +324,7 @@ class DexClient:
             pair = f"{base_symbol.lower()}{quote_symbol.lower()}"
             
             result = self.client.execute_action(
-                contract="dex.libre",
+                contract=self.contract,
                 action_name="cancelorder",
                 data={
                     "orderIdentifier": order_id,
@@ -246,3 +449,60 @@ class DexClient:
                     print(f"- Order {result['order_id']} ({result['type']}): {result['error']}")
         
         return summary
+
+    def get_account_balances(self, account: str) -> list:
+        """Get all token balances for an account.
+        
+        Args:
+            account (str): The account to check balances for
+            
+        Returns:
+            list: List of balance objects with symbol and amount
+        """
+        try:
+            if self.client.verbose:
+                print(f"Fetching balances for account {account}...")
+            
+            # Define token contracts to check
+            token_contracts = [
+                {"symbol": "LIBRE", "contract": "eosio.token"},
+                {"symbol": "BTC", "contract": "btc.libre"},
+                {"symbol": "USDT", "contract": "usdt.libre"}
+            ]
+            
+            balances = []
+            
+            # Fetch balances for each token contract
+            for token in token_contracts:
+                try:
+                    # Use get_currency_balance instead of get_table_rows
+                    balance = self.client.get_currency_balance(
+                        account=account,
+                        symbol=token["symbol"],
+                        contract=token["contract"]
+                    )
+                    
+                    # Parse the balance string (e.g., "10.00000000 BTC")
+                    if balance:
+                        balance_parts = balance.split()
+                        if len(balance_parts) == 2:
+                            amount, symbol = balance_parts
+                            balances.append({
+                                "symbol": symbol,
+                                "amount": amount
+                            })
+                except Exception as e:
+                    if self.client.verbose:
+                        print(f"Warning: Could not get balance for {token['symbol']}: {e}")
+            
+            if self.client.verbose:
+                print(f"Found {len(balances)} token balances for {account}")
+                for balance in balances:
+                    print(f"  {balance['amount']} {balance['symbol']}")
+            
+            return balances
+            
+        except Exception as e:
+            if self.client.verbose:
+                print(f"❌ Error in get_account_balances: {str(e)}")
+            return []

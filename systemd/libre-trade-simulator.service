@@ -1,0 +1,34 @@
+[Unit]
+Description=Libre Trade Simulator Service
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=libre
+Group=libre
+WorkingDirectory=/opt/libre/pylibre
+ExecStart=/opt/libre/pylibre/.venv/bin/python scripts/run_trade_simulator.py --account ${ACCOUNT} --base ${BASE} --quote ${QUOTE} --config ${CONFIG_PATH} --secondary-account ${SECONDARY_ACCOUNT} --frequency ${TRADE_FREQUENCY} --size-variation ${SIZE_VARIATION} --price-range ${PRICE_RANGE} --interval ${CYCLE_INTERVAL} --trades-per-cycle ${TRADES_PER_CYCLE} --pattern ${TRADE_PATTERN}
+Restart=on-failure
+RestartSec=10
+Environment="ACCOUNT=bentest3"
+Environment="SECONDARY_ACCOUNT=bentest3"
+Environment="BASE=LIBRE"
+Environment="QUOTE=BTC"
+Environment="CONFIG_PATH=/opt/libre/pylibre/config/strategies.yaml"
+Environment="TRADE_FREQUENCY=medium"
+Environment="SIZE_VARIATION=medium"
+Environment="PRICE_RANGE=0.01"
+Environment="CYCLE_INTERVAL=30000"
+Environment="TRADES_PER_CYCLE=1"
+Environment="TRADE_PATTERN=random"
+# Uncomment and modify these if needed for API keys or other secrets
+#EnvironmentFile=/etc/libre/env
+
+# Security settings
+ProtectSystem=full
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target 

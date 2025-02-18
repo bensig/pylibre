@@ -1,2 +1,173 @@
-# Example configuration file - Add your credentials and rename to config.yaml
+# Network configurations
+networks:
+  mainnet:
+    api_url: https://lb.libre.org
+    private_keys:  
+  testnet:
+    api_url: https://testnet.libre.org
+    private_keys:
 
+# Strategy configurations
+strategies:
+  defaults:
+    OrderBookMakerStrategy:
+      update_interval_ms: 500
+      min_spread_percentage: 0.06
+      max_spread_percentage: 0.20
+      num_orders: 30
+      quantity_distribution: "equal"
+      order_spacing: "linear"
+      price_source_config:
+        source: "binance"  # or "fixed"
+        reference_symbol: "BTCUSDT"  # Only for Binance
+
+    OrderBookFillerStrategy:
+      update_interval_ms: 500
+      min_spread_percentage: 0.06
+      max_spread_percentage: 0.20
+      num_orders: 30
+      quantity_distribution: "random"
+      order_spacing: "linear"
+      price_source_config:
+        source: "binance"  # or "fixed"
+        reference_symbol: "BTCUSDT"  # Only for Binance
+
+    MarketRateStrategy:
+      update_interval_ms: 500
+      spread_percentage: 0.02
+
+  BTC/USDT:
+      min_order_value_usd: 10.0
+      max_order_value_usd: 100.0
+      min_order_value_btc: 0.00001000
+      max_order_value_btc: 0.00100000
+      OrderBookMakerStrategy:  
+        min_spread_percentage: 0.06
+        max_spread_percentage: 0.10
+      OrderBookFillerStrategy:  
+        min_spread_percentage: 0.06
+        max_spread_percentage: 0.10
+
+  LIBRE/BTC:
+      min_order_value_libre: 100.0000
+      max_order_value_libre: 1000.0000
+      min_order_value_btc: 0.00001000
+      max_order_value_btc: 0.00100000
+
+# Strategy groups 
+strategy_groups:
+  btc_market_making:
+    description: "BTC/USDT market making"
+    pairs: ["BTC/USDT"]
+    strategies:
+      - name: OrderBookMakerStrategy
+        account: "bentester"
+      - name: MarketRateStrategy
+        account: "bentest3"
+
+  libre_market_making:
+    description: "LIBRE/BTC market making"
+    pairs: ["LIBRE/BTC"]
+    price_sources:
+      LIBRE/BTC:
+        source: fixed
+        price: "0.00000001"  # 1 SAT
+        price_precision: 8    # BTC precision
+        base_precision: 4     # LIBRE precision
+    strategies:
+      - name: OrderBookMakerStrategy
+        account: "bentester"
+      - name: MarketRateStrategy
+        account: "bentest3"
+
+# Account configurations
+accounts:
+  dextester:
+    description: "Test account for market making"
+    networks:
+      testnet:
+        enabled: true
+        max_orders: 50
+        max_position:
+          BTC: "1.0"
+          USDT: "50000.0"
+          LIBRE: "10000.0"
+        rate_limits:
+          max_orders_per_second: 10
+          max_cancels_per_second: 10
+      mainnet:
+        enabled: false
+
+  bentester:
+    description: "Test account for market making"
+    networks:
+      testnet:
+        enabled: true
+        max_orders: 50
+        max_position:
+          BTC: "0.5"
+          USDT: "25000.0"
+          LIBRE: "100000.0"
+        rate_limits:
+          max_orders_per_second: 10
+          max_cancels_per_second: 10
+      mainnet:
+        enabled: false
+
+  dextrader:
+    description: "Developer 2nd test account"
+    networks:
+      testnet:
+        enabled: true
+        max_orders: 30
+        max_position:
+          BTC: "0.5"
+          USDT: "25000.0"
+        rate_limits:
+          max_orders_per_second: 10
+          max_cancels_per_second: 10
+      mainnet:
+        enabled: false
+
+  bentest3:
+    description: "Secondary test account"
+    networks:
+      testnet:
+        enabled: true
+        max_orders: 30
+        max_position:
+          BTC: "0.5"
+          USDT: "25000.0"
+        rate_limits:
+          max_orders_per_second: 10
+          max_cancels_per_second: 10
+      mainnet:
+        enabled: false
+
+# Global settings
+global_settings:
+  log_level: INFO
+  log_dir: logs
+  monitoring:
+    health_check_interval_ms: 1000
+    telegram_notifications: true
+  performance:
+    max_event_loop_lag_ms: 100
+    price_feed_timeout_ms: 500 
+
+# Credentials for external services
+credentials:
+  binance:
+    api_key: ""
+    api_secret: ""
+  ipinfo:
+    token: ""
+
+# Global price sources
+price_sources:
+  BTC/USDT:
+    source: "binance"
+    symbol: "BTCUSDT"
+    reference_symbol: "BTCUSDT"
+    api_key: ""
+    api_secret: ""

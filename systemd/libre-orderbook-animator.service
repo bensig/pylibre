@@ -1,0 +1,32 @@
+[Unit]
+Description=Libre OrderBook Animator Service
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=libre
+Group=libre
+WorkingDirectory=/opt/libre/pylibre
+ExecStart=/opt/libre/pylibre/.venv/bin/python scripts/run_orderbook_animator.py --account ${ACCOUNT} --base ${BASE} --quote ${QUOTE} --config ${CONFIG_PATH} --activity ${ACTIVITY_LEVEL} --orders ${ORDERS_PER_CYCLE} --interval ${CYCLE_INTERVAL} --price-variation ${PRICE_VARIATION} --quantity-variation ${QUANTITY_VARIATION}
+Restart=on-failure
+RestartSec=10
+Environment="ACCOUNT=bentest3"
+Environment="BASE=LIBRE"
+Environment="QUOTE=BTC"
+Environment="CONFIG_PATH=/opt/libre/pylibre/config/strategies.yaml"
+Environment="ACTIVITY_LEVEL=medium"
+Environment="ORDERS_PER_CYCLE=3"
+Environment="CYCLE_INTERVAL=5000"
+Environment="PRICE_VARIATION=0.005"
+Environment="QUANTITY_VARIATION=0.1"
+# Uncomment and modify these if needed for API keys or other secrets
+#EnvironmentFile=/etc/libre/env
+
+# Security settings
+ProtectSystem=full
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target 

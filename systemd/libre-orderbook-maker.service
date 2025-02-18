@@ -1,0 +1,31 @@
+[Unit]
+Description=Libre OrderBook Maker Service
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=libre
+Group=libre
+WorkingDirectory=/opt/libre/pylibre
+ExecStart=/opt/libre/pylibre/.venv/bin/python scripts/run_orderbook_maker.py --account ${ACCOUNT} --base ${BASE} --quote ${QUOTE} --config ${CONFIG_PATH} --orders ${NUM_ORDERS} --min-spread ${MIN_SPREAD} --max-spread ${MAX_SPREAD} --distribution ${DISTRIBUTION}
+Restart=on-failure
+RestartSec=10
+Environment="ACCOUNT=bentest3"
+Environment="BASE=LIBRE"
+Environment="QUOTE=BTC"
+Environment="CONFIG_PATH=/opt/libre/pylibre/config/strategies.yaml"
+Environment="NUM_ORDERS=30"
+Environment="MIN_SPREAD=0.01"
+Environment="MAX_SPREAD=0.15"
+Environment="DISTRIBUTION=random"
+# Uncomment and modify these if needed for API keys or other secrets
+#EnvironmentFile=/etc/libre/env
+
+# Security settings
+ProtectSystem=full
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target 

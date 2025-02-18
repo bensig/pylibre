@@ -1,0 +1,31 @@
+[Unit]
+Description=Libre Market Price Tracker Service
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=libre
+Group=libre
+WorkingDirectory=/opt/libre/pylibre
+ExecStart=/opt/libre/pylibre/.venv/bin/python scripts/run_market_price_tracker.py --account ${ACCOUNT} --base ${BASE} --quote ${QUOTE} --config ${CONFIG_PATH} --source ${PRICE_SOURCE} --interval ${UPDATE_INTERVAL} --threshold ${PRICE_THRESHOLD} --fallback-price ${FALLBACK_PRICE}
+Restart=on-failure
+RestartSec=10
+Environment="ACCOUNT=bentest3"
+Environment="BASE=LIBRE"
+Environment="QUOTE=BTC"
+Environment="CONFIG_PATH=/opt/libre/pylibre/config/strategies.yaml"
+Environment="PRICE_SOURCE=binance"
+Environment="UPDATE_INTERVAL=30000"
+Environment="PRICE_THRESHOLD=0.01"
+Environment="FALLBACK_PRICE=0.0000002"
+# Uncomment and modify these if needed for API keys or other secrets
+#EnvironmentFile=/etc/libre/env
+
+# Security settings
+ProtectSystem=full
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target 
