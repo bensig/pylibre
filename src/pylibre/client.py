@@ -185,15 +185,28 @@ class LibreClient:
 
             response = requests.post(
                 f"{self.api_url}/v1/chain/get_table_rows",
-                json=payload
+                json=payload,
+                timeout=10
             )
             response.raise_for_status()
-            return {"success": True, "rows": response.json()["rows"]}
+            result = response.json()
+            
+            return {
+                "success": True,
+                "rows": result.get("rows", []),
+                "more": result.get("more", False),
+                "next_key": result.get("next_key", "")
+            }
+            
+        except requests.Timeout:
+            if self.verbose:
+                print("Request timed out after 10 seconds")
+            return {"success": False, "error": "Request timed out", "rows": [], "more": False}
             
         except Exception as e:
             if self.verbose:
                 print(f"Error response: {e.response.text if hasattr(e, 'response') else str(e)}")
-            return {"success": False, "error": f"Failed to get table rows: {str(e)}"}
+            return {"success": False, "error": f"Failed to get table rows: {str(e)}", "rows": [], "more": False}
 
     def execute_action(self, contract, action_name, data, actor, permission="active"):
         """Execute a contract action using pyntelope."""

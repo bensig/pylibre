@@ -5,46 +5,79 @@ from decimal import Decimal, ROUND_DOWN
 class DexClient:
     def __init__(self, client: LibreClient):
         self.client = client
+        self.verbose = client.verbose  # Pass through verbose flag from LibreClient
 
-    def place_order(self, account, order_type, quantity, price, quote_symbol, base_symbol, contract="dex.libre"):
-        """Place an order on the DEX (bid or offer)."""
+    def place_order(self, account: str, order_type: str, quantity: str, price: str, quote_symbol: str, base_symbol: str) -> dict:
+        """Place a new order on the DEX."""
         try:
-            # Convert inputs to Decimal for precise calculation
-            quantity_dec = Decimal(str(quantity))
-            price_dec = Decimal(str(price))
+            if self.client.verbose:
+                print(f"\nPlacing {order_type} order: {quantity} {base_symbol} @ {price} {quote_symbol}")
 
-            # Format with correct precision
-            if order_type == 'buy':
-                send_amount = quantity_dec * price_dec
-                send_symbol = quote_symbol
-                send_quantity = f"{send_amount:.8f}"
+            # Format price to 8 decimal places for BTC pairs, 4 for others
+            price_decimal = Decimal(str(price))
+            if quote_symbol == "BTC":
+                price_str = f"{price_decimal:.8f}"
+            else:
+                price_str = f"{price_decimal:.4f}"
+
+            # Calculate total cost
+            quantity_decimal = Decimal(str(quantity))
+            total_cost = quantity_decimal * price_decimal
+
+            # Get contract names
+            base_contract = self.get_contract_for_symbol(base_symbol)
+            quote_contract = self.get_contract_for_symbol(quote_symbol)
+
+            if not base_contract or not quote_contract:
+                return {"success": False, "error": f"Invalid symbol pair {base_symbol}/{quote_symbol}"}
+
+            if self.client.verbose:
+                print(f"\nTransfer Details:")
+                print(f"From: {account}")
+                print(f"To: dex.libre")
+
+            # For buy orders, transfer quote currency (e.g. USDT)
+            # For sell orders, transfer base currency (e.g. BTC)
+            if order_type == "buy":
+                amount = total_cost
+                contract = quote_contract
+                memo = f"buy:{quantity} {base_symbol}:{price_str} {quote_symbol}"
+                
+                if self.client.verbose:
+                    print(f"Amount: {amount:.8f} {quote_symbol}")
+                    print(f"Contract: {contract}")
+                    print(f"Memo: {memo}")
+                    
             else:  # sell
-                send_amount = quantity_dec
-                send_symbol = base_symbol
-                precision = 4 if base_symbol == 'LIBRE' else 8
-                send_quantity = f"{send_amount:.{precision}f}"
+                amount = quantity_decimal
+                contract = base_contract
+                memo = f"sell:{quantity} {base_symbol}:{price_str} {quote_symbol}"
+                
+                if self.client.verbose:
+                    print(f"Amount: {amount:.8f} {base_symbol}")
+                    print(f"Contract: {contract}")
+                    print(f"Memo: {memo}")
 
-            # Create the action memo - exact format that works
-            action = f"{order_type}:{quantity_dec:.4f} {base_symbol}:{price_dec:.10f} {quote_symbol}"
-            
-            print(f"Placing {order_type} order: {quantity} {base_symbol} @ {price} {quote_symbol}")
-            
+            # Execute the transfer
             result = self.client.transfer(
-                from_account=account,
-                to_account=contract,
-                quantity=f"{send_quantity} {send_symbol}",
-                memo=action
+                account,
+                "dex.libre",
+                str(amount),
+                contract,
+                memo
             )
 
-            if result.get("success"):
-                print(f"✅ Order placed successfully")
+            if result.get("success", False):
+                return {"success": True}
             else:
-                print(f"❌ Order failed: {result.get('error', 'Unknown error')}")
-            
-            return result
-                
+                error = result.get("error", "Unknown error")
+                if self.client.verbose:
+                    print(f"❌ Order failed: {error}")
+                return {"success": False, "error": error}
+
         except Exception as e:
-            print(f"❌ Error placing order: {str(e)}")
+            if self.client.verbose:
+                print(f"❌ Error placing order: {str(e)}")
             return {"success": False, "error": str(e)}
 
     def fetch_order_book(self, quote_symbol: str, base_symbol: str) -> dict:
@@ -55,55 +88,53 @@ class DexClient:
             if self.client.verbose:
                 print(f"Fetching order book for {base_symbol}/{quote_symbol}...")
             
-            all_rows = []
-            more = True
-            last_key = ""
+            # Get all orders in one request with a high limit
+            response = self.client.get_table_rows(
+                code="dex.libre",
+                table="orderbook2",
+                scope=pair,
+                limit=1000  # Maximum limit
+            )
             
-            while more:
-                response = self.client.get_table_rows(
-                    code="dex.libre",
-                    table="orderbook2",
-                    scope=pair,
-                    limit=1000,
-                    lower_bound=last_key
-                )
-                
-                if not response.get("success", False):
-                    if self.client.verbose:
-                        print(f"❌ Error fetching order book: {response.get('error', 'Unknown error')}")
-                    return None
-                
-                rows = response.get("rows", [])
-                all_rows.extend(rows)
-                
-                more = response.get("more", False)
-                if more:
-                    last_key = response.get("next_key", "")
+            if not response.get("success", False):
+                error = response.get("error", "Unknown error")
+                if self.client.verbose:
+                    print(f"❌ Error fetching order book: {error}")
+                return {"bids": [], "offers": [], "error": error}
             
-            # Parse the rows into bids and offers
+            rows = response.get("rows", [])
             bids = []
             offers = []
             
-            for row in all_rows:
+            for row in rows:
                 try:
+                    # Extract the quantity from baseAsset (e.g. "100.00000000 LIBRE")
                     quantity = row["baseAsset"].split()[0]
                     
                     order = {
-                        "identifier": int(row["identifier"]),
+                        "identifier": str(row["identifier"]),  # Convert to string to match example
                         "account": row["account"],
                         "price": row["price"],
                         "quantity": quantity,
-                        "type": row.get("type", "sell")
+                        "type": row.get("type", "sell")  # Default to sell if not specified
                     }
                     
                     if order["type"] == "buy":
                         bids.append(order)
                     else:
                         offers.append(order)
+                        
                 except (KeyError, ValueError, IndexError) as e:
                     if self.client.verbose:
-                        print(f"Warning: Skipping malformed order: {row}")
+                        print(f"⚠️ Error parsing order row: {e}")
                     continue
+            
+            # Sort bids and offers by price
+            bids.sort(key=lambda x: float(x["price"]), reverse=True)  # Highest price first
+            offers.sort(key=lambda x: float(x["price"]))  # Lowest price first
+            
+            if self.client.verbose:
+                print(f"Found {len(bids)} bids and {len(offers)} offers")
             
             return {
                 "bids": bids,
@@ -113,7 +144,7 @@ class DexClient:
         except Exception as e:
             if self.client.verbose:
                 print(f"❌ Error in fetch_order_book: {str(e)}")
-            return None
+            return {"bids": [], "offers": []}
 
     def cancel_order(self, account: str, order_id: int, quote_symbol: str, base_symbol: str) -> dict:
         """Cancel an order."""
@@ -246,3 +277,13 @@ class DexClient:
                     print(f"- Order {result['order_id']} ({result['type']}): {result['error']}")
         
         return summary
+
+    def get_contract_for_symbol(self, symbol: str) -> str:
+        """Get contract name for a given symbol."""
+        contract_map = {
+            'BTC': 'btc.libre',
+            'USDT': 'usdt.libre',
+            'LIBRE': 'libre.libre'
+            # Add more mappings as needed
+        }
+        return contract_map.get(symbol, '')

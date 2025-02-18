@@ -42,7 +42,12 @@ class ConfigManager:
             strategy_pair_params = {}
         
         # Combine defaults with pair-specific parameters
-        return {**defaults, **strategy_pair_params}
+        combined_params = {**defaults, **strategy_pair_params}
+        
+        # Debugging: Print the combined parameters
+        print(f"Retrieved parameters for {strategy_name} and {pair}: {combined_params}")
+        
+        return combined_params
             
     def get_strategy_group(self, group_name: str) -> Optional[Dict[str, Any]]:
         """Get configuration for a strategy group."""

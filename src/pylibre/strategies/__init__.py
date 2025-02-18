@@ -1,6 +1,6 @@
 from .random_walk import RandomWalkStrategy
 from .market_rate import MarketRateStrategy
-from .orderbook_maker import OrderBookMakerStrategy
+from .orderbook_filler import OrderBookFillerStrategy
 from typing import Optional, Type
 from .templates.base_strategy import BaseStrategy
 
@@ -9,7 +9,7 @@ def get_strategy_class(strategy_name: str) -> Optional[Type[BaseStrategy]]:
     strategies = {
         'RandomWalkStrategy': RandomWalkStrategy,
         'MarketRateStrategy': MarketRateStrategy,
-        'OrderBookMakerStrategy': OrderBookMakerStrategy
+        'OrderBookFillerStrategy': OrderBookFillerStrategy
     }
     return strategies.get(strategy_name)
 
@@ -17,5 +17,6 @@ __all__ = [
     'RandomWalkStrategy',
     'MarketRateStrategy',
     'OrderBookMakerStrategy',
+    'OrderBookFillerStrategy',
     'get_strategy_class'
 ]

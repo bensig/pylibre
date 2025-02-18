@@ -1,7 +1,8 @@
-from pylibre import LibreClient
 from pylibre.strategies import get_strategy_class
+from pylibre.strategies.orderbook_filler import OrderBookFillerStrategy
 from pylibre.utils.logger import StrategyLogger, LogLevel
 from pylibre.manager.config_manager import ConfigManager
+from pylibre.client import LibreClient
 import argparse
 import sys
 import signal
@@ -35,7 +36,7 @@ def main():
         client = LibreClient(
             network='testnet',
             config_path=args.config,
-            verbose=False
+            verbose=True  # Enable verbose for debugging
         )
         
         # Get strategy class
@@ -46,41 +47,44 @@ def main():
             
         # Get strategy parameters from config manager
         pair = f"{args.base}/{args.quote}"
-        parameters = config_manager.get_strategy_parameters(args.strategy, pair)
-        if not parameters:
+        strategy_params = config_manager.get_strategy_parameters(args.strategy, pair)
+        if not strategy_params:
             logger.error(f"No parameters found for strategy {args.strategy} and pair {pair}")
             sys.exit(1)
-            
-        strategy = strategy_class(
-            client=client,
-            account=args.account,
-            base_symbol=args.base,
-            quote_symbol=args.quote,
-            parameters=parameters,  # Pass the combined parameters here
-            logger=logger
-        )
         
-        def handle_shutdown(signum, frame):
-            logger.info("Received shutdown signal")
+        # Create and run strategy
+        if args.strategy == "OrderBookFillerStrategy":
+            strategy = OrderBookFillerStrategy(
+                client=client,
+                account=args.account,
+                base_symbol=args.base,
+                quote_symbol=args.quote,
+                logger=logger,
+                min_spread_percentage=strategy_params.get('min_spread_percentage', 0.006),
+                max_spread_percentage=strategy_params.get('max_spread_percentage', 0.01),
+                num_orders=strategy_params.get('num_orders', 20)
+            )
+        else:
+            strategy = strategy_class(
+                client=client,
+                account=args.account,
+                base_symbol=args.base,
+                quote_symbol=args.quote,
+                parameters=strategy_params,
+                logger=logger
+            )
+        
+        def handle_interrupt(signum, frame):
+            logger.info("Received interrupt signal, cleaning up...")
             strategy.cleanup()
             sys.exit(0)
             
-        signal.signal(signal.SIGINT, handle_shutdown)
-        signal.signal(signal.SIGTERM, handle_shutdown)
-        
-        logger.info(f"Starting {strategy_id}")
+        signal.signal(signal.SIGINT, handle_interrupt)
         strategy.run()
         
     except Exception as e:
-        import traceback
-        logger.error(f"Strategy error: {e}")
-        logger.error(traceback.format_exc())
-        if 'strategy' in locals():
-            try:
-                strategy.cleanup()
-            except Exception as cleanup_error:
-                logger.error(f"Cleanup error: {cleanup_error}")
+        logger.error(f"Error running strategy: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":
-    main() 
+    main()

@@ -160,7 +160,7 @@ class BaseStrategy(ABC):
                     self.place_orders(signal)
                 
                 # Wait for next iteration using update_interval_ms from parameters
-                time.sleep(self.parameters.get('update_interval_ms', 500) / 1000)
+                time.sleep(self.get_update_interval())
                 
         except KeyboardInterrupt:
             self.logger.info("Strategy stopped by user")
@@ -179,6 +179,7 @@ class BaseStrategy(ABC):
             self.logger.error(f"❌ {self.account}: Error during cleanup: {e}")
         finally:
             self.running = False
+
     def _get_order_limits(self) -> tuple[Decimal, Decimal]:
         """Get minimum and maximum order sizes for the current symbol."""
         # Get default limits for the symbol
@@ -210,19 +211,10 @@ class BaseStrategy(ABC):
             balances = self.client.get_currency_balance(self.account, self.base_symbol)
             self.logger.debug(f"Raw balance response for {self.account} {self.base_symbol}: {balances}")
             
-            if not balances:
-                self.logger.error(f"No balance found for {self.account} {self.base_symbol}")
+            if not balances or not isinstance(balances, list):
+                self.logger.error(f"Invalid balance response for {self.account} {self.base_symbol}")
                 return Decimal('0')
             
-            if not isinstance(balances, list):
-                self.logger.error(f"Expected list response, got {type(balances)}: {balances}")
-                return Decimal('0')
-            
-            # get_currency_balance returns a list of strings like ["123.4567 SYMBOL"]
-            if not balances[0]:
-                self.logger.error(f"Empty balance string for {self.account}")
-                return Decimal('0')
-                
             balance_str = balances[0]
             self.logger.debug(f"Processing balance string: '{balance_str}'")
             
@@ -230,20 +222,18 @@ class BaseStrategy(ABC):
             if len(parts) != 2:
                 self.logger.error(f"Invalid balance format: '{balance_str}'")
                 return Decimal('0')
-                
-            amount = parts[0]
-            symbol = parts[1]
             
+            amount_str, symbol = parts
             if symbol != self.base_symbol:
                 self.logger.error(f"Symbol mismatch: expected {self.base_symbol}, got {symbol}")
                 return Decimal('0')
-                
+            
             try:
-                balance = Decimal(amount)
+                balance = Decimal(amount_str)
                 self.logger.info(f"{self.account} balance: {balance} {symbol}")
                 return balance
             except decimal.InvalidOperation as e:
-                self.logger.error(f"Failed to convert '{amount}' to Decimal: {e}")
+                self.logger.error(f"Failed to convert '{amount_str}' to Decimal: {e}")
                 return Decimal('0')
             
         except Exception as e:
@@ -251,6 +241,72 @@ class BaseStrategy(ABC):
             import traceback
             self.logger.debug(f"Balance error traceback: {traceback.format_exc()}")
             return Decimal('0')
+
+    def get_currency_balance(self, symbol: str) -> Decimal:
+        """Get currency balance for the strategy account.
+        
+        Args:
+            symbol: The currency symbol to get balance for
+            
+        Returns:
+            Decimal: The account balance for the specified currency
+        """
+        try:
+            balances = self.client.get_currency_balance(self.account, symbol)
+            if not balances:
+                self.logger.debug(f"{self.account}: No balance found for {symbol}")
+                return Decimal('0')
+                
+            balance_str = balances[0]
+            self.logger.debug(f"{self.account} raw balance: {balance_str}")
+            
+            # Handle balance format like "1.23456789 BTC"
+            amount_str = balance_str.split()[0]
+            return Decimal(amount_str)
+            
+        except Exception as e:
+            self.logger.error(f"❌ {self.account}: Error getting {symbol} balance: [{type(e)}] {e}")
+            return Decimal('0')
+
+    def check_balance(self) -> tuple[Decimal, Decimal]:
+        """Check and log the balance for both base and quote assets.
+        
+        Returns:
+            tuple[Decimal, Decimal]: Base and quote balances
+        """
+        base_balance = self.get_currency_balance(self.base_symbol)
+        quote_balance = self.get_currency_balance(self.quote_symbol)
+        
+        self.logger.info(
+            f"{self.account} balances - "
+            f"{self.base_symbol}: {base_balance}, "
+            f"{self.quote_symbol}: {quote_balance}"
+        )
+        
+        return base_balance, quote_balance
+
+    def _get_precision(self) -> int:
+        """Determine the precision based on base and quote symbols."""
+        if self.base_symbol == 'BTC' and self.quote_symbol != 'BTC':
+            return 8
+        elif self.quote_symbol == 'BTC':
+            return 10
+        elif self.base_symbol == 'USDT':
+            return 2
+        return 8  # Default precision for other symbols
+
+    def _calculate_order_quantity(self, total_balance: Decimal) -> Decimal:
+        """Calculate order quantity ensuring it's valid and non-zero."""
+        min_order = DEFAULT_COIN_LIMITS[self.base_symbol]['min_order_value']
+        precision = self._get_precision()
+        order_quantity = (total_balance / Decimal('10')).quantize(Decimal('1.' + '0' * precision), rounding=ROUND_DOWN)
+        
+        if order_quantity < Decimal(min_order):
+            self.logger.warning(f"Calculated order quantity {order_quantity} is below minimum {min_order}")
+            return Decimal('0')
+        
+        self.logger.debug(f"Calculated order quantity: {order_quantity}")
+        return order_quantity
 
     def place_distributed_orders(self, base_price: Decimal, min_spread: Decimal, max_spread: Decimal) -> bool:
         """Place multiple orders with configurable distribution and spacing."""
@@ -337,19 +393,17 @@ class BaseStrategy(ABC):
             self.logger.error(f"❌ Error placing distributed orders: {str(e)}")
             return False
 
-    def _get_precision(self, symbol: str) -> int:
-        """Get decimal precision for a token."""
-        precision_map = {
-            "LIBRE": 4,
-            "BTC": 8,
-            "USDT": 8
-        }
-        return precision_map.get(symbol, 8)
-
     def _format_quantity(self, quantity: Decimal, symbol: str) -> str:
         """Format quantity with correct precision."""
-        precision = self._get_precision(symbol)
+        precision = self._get_precision()
         return f"{quantity:.{precision}f}"
+
+    def _format_price(self, price: Decimal) -> str:
+        """Format price with correct precision."""
+        precision = self._get_precision()
+        if self.quote_symbol == 'USDT':
+            precision = 2
+        return f"{price:.{precision}f}"
 
     def _place_single_order(self, order_type: str, quantity: str, price: Decimal, order_num: int) -> bool:
         """Place a single order with proper logging."""
@@ -365,27 +419,23 @@ class BaseStrategy(ABC):
                 return False
 
             # Format price based on quote currency
-            if self.quote_symbol == 'BTC':
-                price_str = f"{price:.8f}"
-            else:
-                price_str = f"{price:.2f}"
-                
+            formatted_price = self._format_price(price)
             self.logger.info(
-                f"Placing {order_type} order: {quantity} {self.base_symbol} @ {price_str} {self.quote_symbol}"
+                f"Placing {order_type} order: {quantity} {self.base_symbol} @ {formatted_price} {self.quote_symbol}"
             )
 
             result = self.dex.place_order(
                 account=self.account,
                 order_type=order_type,
                 quantity=quantity,
-                price=price_str,
+                price=formatted_price,
                 quote_symbol=self.quote_symbol,
                 base_symbol=self.base_symbol
             )
             
             if result.get("success"):
                 emoji = '💰' if order_type == 'sell' else '💸'
-                self.logger.info(f"{emoji} {self.account}: {order_type.upper()} {quantity} @ {price_str}")
+                self.logger.info(f"{emoji} {self.account}: {order_type.upper()} {quantity} @ {formatted_price}")
                 return True
             else:
                 error = result.get('error', 'Unknown error')
@@ -478,9 +528,7 @@ class BaseStrategy(ABC):
             
             # Calculate available balance including reserve
             available_balance = self._get_available_balance()
-            per_order_quantity = (available_balance / Decimal('20')).quantize(
-                Decimal('0.00000001'), rounding=ROUND_DOWN
-            )
+            per_order_quantity = self._calculate_order_quantity(available_balance)
             
             # Randomly choose buy or sell
             order_type = random.choice(['buy', 'sell'])
@@ -503,31 +551,20 @@ class BaseStrategy(ABC):
             self.logger.error(f"Error placing replacement order: {e}")
             return False
 
-    def get_market_price(self) -> Optional[Decimal]:
-        """Get market price from price feed."""
+    def initialize_price_source(self):
+        """Initialize the price source using the PriceFeedFactory."""
+        from pylibre.price_feed.factory import PriceFeedFactory
+        price_source_config = self.parameters.get('price_source_config', {})
+        self.price_source = PriceFeedFactory.create_price_source(price_source_config)
+
+    def get_market_price(self) -> Decimal:
+        """Retrieve the current market price from the price source."""
         try:
-            # Get price source from parameters if available
-            pair = f"{self.base_symbol}/{self.quote_symbol}"
-            price_source = self.parameters.get('price_source', {})
-            
-            # If there's a specific config with a fixed price, use that
-            if price_source and price_source.get('type') == 'fixed':
-                price = price_source.get('price')
-                if price:
-                    return Decimal(str(price))
-            
-            # Otherwise try to read from the default price file
-            price_file = f"shared_data/{self.base_symbol.lower()}{self.quote_symbol.lower()}_price.json"
-            price = read_price(price_file)
-            if price:
-                return Decimal(str(price))
-            
-            self.logger.error(f"Could not read price from {price_file}")
-            return None
-            
+            current_price = read_price(f"shared_data/{self.base_symbol.lower()}{self.quote_symbol.lower()}_price.json")
+            return Decimal(str(current_price))
         except Exception as e:
             self.logger.error(f"Error getting market price: {e}")
-            return None
+            return Decimal('0')
 
     def generate_signal(self) -> Dict[str, Any]:
         """Generate signal based on market price feed."""
@@ -548,3 +585,8 @@ class BaseStrategy(ABC):
             'min_spread': min_spread,
             'max_spread': max_spread
         }
+
+    def get_update_interval(self) -> float:
+        """Retrieve the update interval from parameters, defaulting to 1 second if not specified."""
+        update_interval_ms = self.parameters.get('update_interval_ms', 1000)  # Default to 1000 ms
+        return update_interval_ms / 1000.0  # Convert milliseconds to seconds

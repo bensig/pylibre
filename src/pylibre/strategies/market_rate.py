@@ -27,6 +27,17 @@ class MarketRateStrategy(BaseStrategy):
             'max_spread': max_spread
         }
 
+    def check_balance(self):
+        """Check and log the balance for both base and quote assets."""
+        return super().check_balance()
+
+    def run(self):
+        """Run the strategy."""
+        self.check_balance()
+        signal = self.generate_signal()
+        if signal is not None:
+            self.place_orders(signal)
+
     def place_orders(self, signal: Dict[str, Any]) -> bool:
         """Place a pair of orders around the market price."""
         if signal is None:
@@ -62,6 +73,7 @@ class MarketRateStrategy(BaseStrategy):
             quantity = per_order_quantity * Decimal(str(random.uniform(0.95, 1.05)))
             quantity_str = f"{quantity:.8f}"
             
+            self.logger.info(f"Placing orders with base price: {base_price}, spreads: {min_spread}-{max_spread}")
             self.logger.info(
                 f"Placing orders: Market={base_price}, "
                 f"Buy={buy_price} (-{buy_spread:.2%}), "
@@ -79,11 +91,4 @@ class MarketRateStrategy(BaseStrategy):
 
     def _get_available_balance(self) -> Decimal:
         """Get available balance for trading."""
-        try:
-            balance = self.client.get_currency_balance(self.account, self.base_symbol)
-            self.logger.debug(f"{self.account} balance: {balance} {self.base_symbol}")
-            return Decimal(str(balance))
-        except Exception as e:
-            self.logger.error(f"❌ {self.account}: Error getting balance: {e}")
-            return Decimal('0')
-
+        return self.get_currency_balance(self.base_symbol)
