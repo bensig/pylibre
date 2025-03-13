@@ -130,14 +130,14 @@
     }
   },
   "MarketPriceTrackerStrategy_bentester_LIBRE_BTC": {
-    "orders_placed": true,
-    "orders_filled": 0,
-    "orders_cancelled": 0,
+    "orders_placed": 64,
+    "orders_filled": 60,
+    "orders_cancelled": 22,
     "errors": 0,
     "warnings": 0,
-    "cycle_count": 3,
+    "cycle_count": 32,
     "last_cycle_duration_ms": 0,
-    "avg_cycle_duration_ms": 45003,
+    "avg_cycle_duration_ms": 0,
     "history": {
       "timestamps": [
         "2025-03-12T10:47:05.573200",
@@ -155,14 +155,14 @@
     }
   },
   "OrderBookMakerStrategy_bentester_LIBRE_BTC": {
-    "orders_placed": true,
-    "orders_filled": 0,
-    "orders_cancelled": 0,
+    "orders_placed": 64,
+    "orders_filled": 60,
+    "orders_cancelled": 22,
     "errors": 0,
     "warnings": 0,
-    "cycle_count": 1,
-    "last_cycle_duration_ms": 25028,
-    "avg_cycle_duration_ms": 85534,
+    "cycle_count": 32,
+    "last_cycle_duration_ms": 0,
+    "avg_cycle_duration_ms": 0,
     "history": {
       "timestamps": [
         "2025-03-12T10:47:32.110752",
@@ -176,14 +176,14 @@
     }
   },
   "OrderBookAnimatorStrategy_bentester_LIBRE_BTC": {
-    "orders_placed": null,
-    "orders_filled": 0,
-    "orders_cancelled": 0,
+    "orders_placed": 64,
+    "orders_filled": 60,
+    "orders_cancelled": 22,
     "errors": 0,
     "warnings": 0,
-    "cycle_count": 4,
-    "last_cycle_duration_ms": 11557,
-    "avg_cycle_duration_ms": 10407,
+    "cycle_count": 32,
+    "last_cycle_duration_ms": 0,
+    "avg_cycle_duration_ms": 0,
     "history": {
       "timestamps": [
         "2025-03-12T10:47:11.206411",
@@ -203,14 +203,14 @@
     }
   },
   "TradeSimulatorStrategy_bentester_LIBRE_BTC": {
-    "orders_placed": 0,
-    "orders_filled": 0,
-    "orders_cancelled": 0,
+    "orders_placed": 64,
+    "orders_filled": 60,
+    "orders_cancelled": 22,
     "errors": 0,
     "warnings": 0,
-    "cycle_count": 31,
-    "last_cycle_duration_ms": 6269,
-    "avg_cycle_duration_ms": 5709,
+    "cycle_count": 32,
+    "last_cycle_duration_ms": 0,
+    "avg_cycle_duration_ms": 0,
     "history": {
       "timestamps": [
         "2025-03-12T10:47:11.928480",
