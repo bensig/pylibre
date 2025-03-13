@@ -19,6 +19,7 @@ These strategies can be run individually or together using the `StrategyCoordina
 - **Monitoring Dashboard**: Web-based dashboard for monitoring strategy performance
 - **Systemd Integration**: Run strategies as system services
 - **Coordination**: Manage multiple strategies for a trading pair
+- **Role-Based Account Management**: Assign different accounts to different roles for each trading pair
 
 ## Installation
 
@@ -83,9 +84,25 @@ python scripts/run_trade_simulator.py --account your_account --base LIBRE --quot
 
 ### Running the Strategy Coordinator
 
+The strategy coordinator can now be run with specific roles:
+
 ```bash
-python scripts/run_strategy_coordinator.py --account your_account --base LIBRE --quote BTC
+# Run as liquidity provider (market maker + animator + price tracker)
+python scripts/run_strategy_coordinator.py --base LIBRE --quote BTC --role liquidity_provider
+
+# Run as trade simulator
+python scripts/run_strategy_coordinator.py --base LIBRE --quote BTC --role trade_simulator_1
 ```
+
+### Running All Strategies for a Trading Pair
+
+To run all roles (liquidity provider and trade simulators) for a trading pair at once:
+
+```bash
+python scripts/run_strategies_all.py --pair LIBREBTC --dashboard
+```
+
+This will start the liquidity provider with the dashboard and all configured trade simulators.
 
 ### Running the Monitoring Dashboard
 
@@ -131,7 +148,37 @@ trading_pairs:
       trade_pattern: "trend"
       trend_direction: "up"
       trend_strength: 0.7
+
+# Account configuration
+accounts:
+  # Trading pair specific account configurations
+  BTCUSDT:
+    liquidity_provider: "dextrader"    # Account for market making and animation
+    trade_simulator_1: "dextester"     # First trade simulator account
+    trade_simulator_2: "siggy"         # Second trade simulator account
+  
+  LIBREBTC:
+    liquidity_provider: "bentester"    # Account for market making and animation
+    trade_simulator_1: "bentest3"      # First trade simulator account
+    trade_simulator_2: "orderbooks"    # Second trade simulator account
 ```
+
+### Role-Based Account Configuration
+
+The new account configuration allows you to specify different accounts for different roles for each trading pair:
+
+- **liquidity_provider**: The account used for OrderBookMakerStrategy and OrderBookAnimatorStrategy
+- **trade_simulator_1** and **trade_simulator_2**: Accounts used for TradeSimulatorStrategy
+
+The MarketPriceTrackerStrategy doesn't require an account as it only tracks prices and doesn't place orders.
+
+## Strategy Roles
+
+The system now supports different roles for strategy execution:
+
+1. **Liquidity Provider**: Runs the OrderBookMakerStrategy, OrderBookAnimatorStrategy, and MarketPriceTrackerStrategy to provide liquidity and maintain the order book.
+
+2. **Trade Simulator**: Runs the TradeSimulatorStrategy to create the appearance of trades being executed against the liquidity provider's orders.
 
 ## Production Deployment
 

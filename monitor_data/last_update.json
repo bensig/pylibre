@@ -7,8 +7,8 @@
   "OrderBookMakerStrategy_dextester_LIBRE_BTC": "2025-03-10T23:40:55.641679",
   "OrderBookAnimatorStrategy_dextester_LIBRE_BTC": "2025-03-10T23:01:15.399700",
   "TradeSimulatorStrategy_dextester_LIBRE_BTC": "2025-03-10T23:01:15.399743",
-  "MarketPriceTrackerStrategy_bentester_LIBRE_BTC": "2025-03-12T15:17:45.131078",
-  "OrderBookMakerStrategy_bentester_LIBRE_BTC": "2025-03-12T15:17:45.131090",
-  "OrderBookAnimatorStrategy_bentester_LIBRE_BTC": "2025-03-12T15:17:45.131093",
-  "TradeSimulatorStrategy_bentester_LIBRE_BTC": "2025-03-12T15:17:45.131096"
+  "MarketPriceTrackerStrategy_bentester_LIBRE_BTC": "2025-03-13T11:10:45.272152",
+  "OrderBookMakerStrategy_bentester_LIBRE_BTC": "2025-03-13T11:11:10.219585",
+  "OrderBookAnimatorStrategy_bentester_LIBRE_BTC": "2025-03-13T11:11:25.566147",
+  "TradeSimulatorStrategy_bentester_LIBRE_BTC": "2025-03-13T11:11:42.120725"
 }

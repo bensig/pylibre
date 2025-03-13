@@ -45,25 +45,18 @@ def main():
     parser = argparse.ArgumentParser(description='Run the StrategyCoordinator')
     
     # Required arguments
-    parser.add_argument('--account', required=True, help='Account for trading')
     parser.add_argument('--base', required=True, help='Base symbol (e.g., LIBRE)')
     parser.add_argument('--quote', required=True, help='Quote symbol (e.g., BTC)')
     
     # Optional arguments
+    parser.add_argument('--account', help='Override account for trading (optional)')
+    parser.add_argument('--role', choices=['liquidity_provider', 'trade_simulator_1', 'trade_simulator_2'], 
+                        help='Role of this instance (optional, defaults to liquidity_provider)')
     parser.add_argument('--config', default='config/strategies.yaml', help='Path to config file')
     parser.add_argument('--dashboard', action='store_true', help='Start the monitoring dashboard')
     parser.add_argument('--dashboard-port', type=int, default=5000, help='Port for the dashboard server')
     
     args = parser.parse_args()
-    
-    # Set up logging - StrategyLogger already configures handlers internally
-    logger = StrategyLogger(f"Coordinator_{args.account}", level=LogLevel.INFO)
-    
-    # Print banner
-    print("\n" + "=" * 80)
-    print(f"Strategy Coordinator for {args.base}/{args.quote} using account {args.account}")
-    print("=" * 80 + "\n")
-    logger.info(f"Starting StrategyCoordinator for {args.base}/{args.quote}")
     
     # Load configuration
     config = load_config(args.config)
@@ -71,48 +64,89 @@ def main():
     # Get API endpoint from config
     api_endpoint = config.get('api_endpoint', 'https://testnet.libre.org')
     
+    # Determine which account to use based on trading pair and role
+    pair_key = f"{args.base}{args.quote}"
+    role = args.role or 'liquidity_provider'
+    
+    # If account is explicitly provided, use that
+    if args.account:
+        account = args.account
+    else:
+        # Otherwise, get account from config based on pair and role
+        pair_accounts = config.get('accounts', {}).get(pair_key, {})
+        if not pair_accounts:
+            print(f"No account configuration found for pair {pair_key}")
+            return
+        
+        account = pair_accounts.get(role)
+        if not account:
+            print(f"No account found for role {role} in pair {pair_key}")
+            return
+    
+    # Set up logging - StrategyLogger already configures handlers internally
+    logger = StrategyLogger(f"Coordinator_{account}_{pair_key}", level=LogLevel.INFO)
+    
+    # Print banner
+    print("\n" + "=" * 80)
+    print(f"Strategy Coordinator for {args.base}/{args.quote} using account {account} as {role}")
+    print("=" * 80 + "\n")
+    logger.info(f"Starting StrategyCoordinator for {args.base}/{args.quote}")
+    
     # Initialize LibreClient
     client = LibreClient(api_url=api_endpoint, verbose=True)
     
     # Create coordinator configuration
     coordinator_config = {
-        'account': args.account,
+        'account': account,
         'base_symbol': args.base,
         'quote_symbol': args.quote,
         'strategies': {}
     }
     
     # Get trading pair specific configuration
-    pair_key = f"{args.base}{args.quote}"
     pair_config = config.get('trading_pairs', {}).get(pair_key, {})
     
-    # Add strategies from pair config
+    # Add strategies based on role
     if pair_config:
         logger.info(f"Found configuration for trading pair {pair_key}")
         
-        # Add MarketPriceTrackerStrategy if configured
-        if 'price_tracker' in pair_config:
-            logger.info("Adding MarketPriceTrackerStrategy")
-            coordinator_config['strategies']['MarketPriceTrackerStrategy'] = pair_config['price_tracker']
-            # Ensure the price_source is correctly set (not 'source')
-            if 'source' in coordinator_config['strategies']['MarketPriceTrackerStrategy']:
-                coordinator_config['strategies']['MarketPriceTrackerStrategy']['price_source'] = \
-                    coordinator_config['strategies']['MarketPriceTrackerStrategy'].pop('source')
-        
-        # Add OrderBookMakerStrategy if configured
-        if 'market_maker' in pair_config:
-            logger.info("Adding OrderBookMakerStrategy")
-            coordinator_config['strategies']['OrderBookMakerStrategy'] = pair_config['market_maker']
-        
-        # Add OrderBookAnimatorStrategy if configured
-        if 'animator' in pair_config:
-            logger.info("Adding OrderBookAnimatorStrategy")
-            coordinator_config['strategies']['OrderBookAnimatorStrategy'] = pair_config['animator']
+        if role == 'liquidity_provider':
+            # Liquidity providers run MarketPriceTracker, OrderBookMaker, and OrderBookAnimator
             
-        # Add TradeSimulatorStrategy if configured
-        if 'simulator' in pair_config:
-            logger.info("Adding TradeSimulatorStrategy")
-            coordinator_config['strategies']['TradeSimulatorStrategy'] = pair_config['simulator']
+            # Add MarketPriceTrackerStrategy if configured
+            if 'price_tracker' in pair_config:
+                logger.info("Adding MarketPriceTrackerStrategy")
+                coordinator_config['strategies']['MarketPriceTrackerStrategy'] = pair_config['price_tracker']
+                # Ensure the price_source is correctly set (not 'source')
+                if 'source' in coordinator_config['strategies']['MarketPriceTrackerStrategy']:
+                    coordinator_config['strategies']['MarketPriceTrackerStrategy']['price_source'] = \
+                        coordinator_config['strategies']['MarketPriceTrackerStrategy'].pop('source')
+            
+            # Add OrderBookMakerStrategy if configured
+            if 'market_maker' in pair_config:
+                logger.info("Adding OrderBookMakerStrategy")
+                coordinator_config['strategies']['OrderBookMakerStrategy'] = pair_config['market_maker']
+            
+            # Add OrderBookAnimatorStrategy if configured
+            if 'animator' in pair_config:
+                logger.info("Adding OrderBookAnimatorStrategy")
+                coordinator_config['strategies']['OrderBookAnimatorStrategy'] = pair_config['animator']
+                
+        elif role.startswith('trade_simulator'):
+            # Trade simulators only run TradeSimulatorStrategy
+            
+            # Add TradeSimulatorStrategy if configured
+            if 'simulator' in pair_config:
+                logger.info("Adding TradeSimulatorStrategy")
+                simulator_config = pair_config['simulator'].copy()
+                
+                # Get the liquidity provider account for this pair
+                liquidity_provider = config.get('accounts', {}).get(pair_key, {}).get('liquidity_provider')
+                if liquidity_provider:
+                    # Set the counterparty account for trade simulation
+                    simulator_config['counterparty_account'] = liquidity_provider
+                
+                coordinator_config['strategies']['TradeSimulatorStrategy'] = simulator_config
     else:
         logger.warning(f"No configuration found for trading pair {pair_key}")
         
@@ -153,7 +187,7 @@ def main():
                 logger.info(f"    Spread: {strategy_config.get('min_spread_percentage', 'default')} - {strategy_config.get('max_spread_percentage', 'default')}")
             elif strategy_name == 'TradeSimulatorStrategy':
                 logger.info(f"    Trades Per Cycle: {strategy_config.get('trades_per_cycle', 'default')}")
-                logger.info(f"    Secondary Account: {strategy_config.get('secondary_account', args.account)}")
+                logger.info(f"    Secondary Account: {strategy_config.get('secondary_account', account)}")
         else:
             logger.info(f"  - {strategy_name}: DISABLED")
     
@@ -163,7 +197,7 @@ def main():
         signal.signal(signal.SIGINT, signal_handler)
         
         # Create coordinator
-        logger.info(f"Creating StrategyCoordinator for {args.base}/{args.quote} using account {args.account}")
+        logger.info(f"Creating StrategyCoordinator for {args.base}/{args.quote} using account {account}")
         coordinator = StrategyCoordinator(client, coordinator_config, logger)
         
         # Start coordinator

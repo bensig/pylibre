@@ -97,7 +97,18 @@ strategies:
 
 # Account configuration
 accounts:
-  # You can define multiple accounts for different purposes
+  # Trading pair specific account configurations
+  BTCUSDT:
+    liquidity_provider: "dextrader"    # Account for market making and animation
+    trade_simulator_1: "dextester"     # First trade simulator account
+    trade_simulator_2: "siggy"         # Second trade simulator account
+  
+  LIBREBTC:
+    liquidity_provider: "bentester"    # Account for market making and animation
+    trade_simulator_1: "bentest3"      # First trade simulator account
+    trade_simulator_2: "orderbooks"    # Second trade simulator account
+
+  # Legacy account configuration (kept for backward compatibility)
   main: "bentester"       # Main account for market making
   animator: "bentest3"    # Account for animation
   tracker: "dextester"    # Account for price tracking

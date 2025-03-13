@@ -139,9 +139,9 @@
       "fixed_price": 2e-07,
       "price_change_threshold": 0.01
     },
-    "status": "stopped",
-    "start_time": "2025-03-12T10:47:05.570051",
-    "last_active": "2025-03-12T10:50:28.630762"
+    "status": "running",
+    "start_time": "2025-03-13T11:10:45.267198",
+    "last_active": "2025-03-13T11:10:45.272016"
   },
   "OrderBookMakerStrategy_bentester_LIBRE_BTC": {
     "id": "OrderBookMakerStrategy_bentester_LIBRE_BTC",
@@ -158,8 +158,8 @@
       "min_order_size_base": 100
     },
     "status": "running",
-    "start_time": "2025-03-12T10:47:05.570982",
-    "last_active": "2025-03-12T10:47:06.073794"
+    "start_time": "2025-03-13T11:10:45.268936",
+    "last_active": "2025-03-13T11:10:45.777532"
   },
   "OrderBookAnimatorStrategy_bentester_LIBRE_BTC": {
     "id": "OrderBookAnimatorStrategy_bentester_LIBRE_BTC",
@@ -174,8 +174,8 @@
       "min_order_size_base": 50
     },
     "status": "stopped",
-    "start_time": "2025-03-12T10:47:05.571609",
-    "last_active": "2025-03-12T10:48:00.773361"
+    "start_time": "2025-03-13T11:10:45.269887",
+    "last_active": "2025-03-13T11:11:25.566145"
   },
   "TradeSimulatorStrategy_bentester_LIBRE_BTC": {
     "id": "TradeSimulatorStrategy_bentester_LIBRE_BTC",
@@ -194,8 +194,8 @@
       "max_trade_size_base": 200,
       "min_trade_size_base": 20
     },
-    "status": "stopped",
-    "start_time": "2025-03-12T10:47:05.572224",
-    "last_active": "2025-03-12T10:50:10.790169"
+    "status": "running",
+    "start_time": "2025-03-13T11:10:45.270734",
+    "last_active": "2025-03-13T11:10:46.782778"
   }
 }

@@ -20,7 +20,11 @@ class TradeSimulatorStrategy(BaseStrategy):
         self.primary_account = account
         
         # Secondary account for the other side of trades
-        self.secondary_account = parameters.get('secondary_account', self.primary_account)
+        # First check for counterparty_account (new parameter name)
+        # Then fall back to secondary_account (old parameter name)
+        # Finally default to the primary account (for backward compatibility)
+        self.secondary_account = parameters.get('counterparty_account', 
+                                  parameters.get('secondary_account', self.primary_account))
         
         # Strategy parameters with defaults
         self.trade_frequency = parameters.get('trade_frequency', 'medium')
