@@ -43,7 +43,7 @@ class DexClient:
             
             # Define token specifications
             TOKEN_SPECS = {
-                "BTC": {"contract": "btc.libre", "precision": 8},
+                "BTC": {"contract": "btc.libre", "precision": 8},  # Standard satoshi precision when used as base
                 "USDT": {"contract": "usdt.libre", "precision": 8},
                 "LIBRE": {"contract": "eosio.token", "precision": 4}
             }
@@ -51,6 +51,10 @@ class DexClient:
             # Get precision for base and quote symbols
             base_precision = TOKEN_SPECS.get(base_symbol, {}).get("precision", 8)
             quote_precision = TOKEN_SPECS.get(quote_symbol, {}).get("precision", 8)
+            
+            # Special case: If BTC is the quote currency, use 10 decimal places
+            if quote_symbol == "BTC":
+                quote_precision = 10
             
             # Convert inputs to Decimal for precise calculation
             # Remove any existing symbol part if present in the input
@@ -79,7 +83,7 @@ class DexClient:
                 
                 # Special handling for BTC sell orders
                 if base_symbol == "BTC":
-                    # Ensure exactly 8 decimal places with no scientific notation
+                    # Use standard satoshi precision (8 decimal places) when BTC is the base currency
                     formatted_amount = f"{send_amount:.8f}"
                     
                     # Ensure the formatted amount has exactly 8 decimal places
@@ -150,6 +154,26 @@ class DexClient:
                     print(f"  Original: {send_quantity}")
                     print(f"  Adjusted: {formatted_quantity}")
                     send_quantity = formatted_quantity
+            elif quote_symbol == "BTC":
+                # Special handling for when BTC is the quote currency (sub-satoshi precision)
+                # Format base quantity with standard precision
+                formatted_quantity = f"{quantity_dec:.{base_precision}f}"
+                parts = formatted_quantity.split('.')
+                if len(parts) == 2:
+                    integer_part, decimal_part = parts
+                    decimal_part = decimal_part.ljust(base_precision, '0')[:base_precision]
+                    formatted_quantity = f"{integer_part}.{decimal_part}"
+                
+                # Format price with 10 decimal places for sub-satoshi precision
+                formatted_price = f"{price_dec:.10f}"
+                price_parts = formatted_price.split('.')
+                if len(price_parts) == 2:
+                    price_integer, price_decimal = price_parts
+                    price_decimal = price_decimal.ljust(10, '0')[:10]
+                    formatted_price = f"{price_integer}.{price_decimal}"
+                
+                # Exactly match the format from successful CLI commands
+                action = f"{order_type}:{formatted_quantity} {base_symbol}:{formatted_price} {quote_symbol}"
             else:
                 action = f"{order_type}:{quantity_dec:.{base_precision}f} {base_symbol}:{price_dec:.{quote_precision}f} {quote_symbol}"
             
@@ -185,6 +209,25 @@ class DexClient:
                     quantity=f"{exact_quantity} {send_symbol}",
                     memo=exact_memo,
                     contract=contract
+                )
+            # Special handling for when BTC is the quote currency (buy orders)
+            elif order_type == 'buy' and quote_symbol == 'BTC':
+                # For buy orders with BTC as quote, we need to ensure the price has 10 decimal places
+                # Match exactly the format used in the successful CLI command
+                exact_price = f"{Decimal(price):.10f}"
+                exact_quantity = f"{Decimal(quantity):.{base_precision}f}"
+                exact_memo = f"{order_type}:{exact_quantity} {base_symbol}:{exact_price} {quote_symbol}"
+                
+                print("\nDETAILED BTC QUOTE BUY ORDER INFO:")
+                print(f"Exact quantity: {exact_quantity}")
+                print(f"Exact price: {exact_price}")
+                print(f"Exact memo: {exact_memo}")
+                
+                result = self.client.transfer(
+                    from_account=account,
+                    to_account=self.contract,
+                    quantity=f"{send_quantity} {send_symbol}",
+                    memo=exact_memo
                 )
             else:
                 result = self.client.transfer(

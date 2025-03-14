@@ -1,0 +1,107 @@
+# Strategy Configuration
+
+# API endpoint
+api_endpoint: "https://lb.libre.org"
+
+# Trading pairs configuration
+trading_pairs:
+  BTCUSDT:
+    market_maker:
+      enabled: true
+      num_orders: 30  # 15 per side
+      min_spread_percentage: 0.01
+      max_spread_percentage: 0.15
+      quantity_distribution: "random"
+      update_interval_ms: 60000  # 1 minute
+    
+    animator:
+      enabled: true
+      activity_level: "medium"  # low, medium, high
+      orders_per_cycle: 3  # number of orders to update each cycle
+      cycle_interval_ms: 5000  # 5 seconds
+    
+    price_tracker:
+      enabled: true
+      price_source: "binance"  # Fixed the key name from 'source' to 'price_source'
+      update_interval_ms: 30000  # 30 seconds
+      price_change_threshold: 0.005  # 0.5%
+      
+    simulator:
+      enabled: true
+      trade_frequency: "medium"  # low, medium, high
+      trade_size_variation: "medium"  # low, medium, high
+      price_range_percentage: 0.005  # 0.5%
+      cycle_interval_ms: 30000  # 30 seconds
+      trades_per_cycle: 1
+      trade_pattern: "random"  # random, trend, reversion
+
+  LIBREBTC:
+    market_maker:
+      enabled: true
+      num_orders: 30
+      min_spread_percentage: 0.01
+      max_spread_percentage: 0.15
+      quantity_distribution: "random"
+      update_interval_ms: 120000  # 2 minutes
+    
+    animator:
+      enabled: true
+      activity_level: "high"
+      orders_per_cycle: 5
+      cycle_interval_ms: 3000  # 3 seconds
+    
+    price_tracker:
+      enabled: true
+      price_source: "fixed"  # manually set price
+      update_interval_ms: 60000  # 1 minute
+      price_change_threshold: 0.01  # 1%
+      fallback_price: 0.0000000084  # Default price for LIBRE/BTC
+      
+    simulator:
+      enabled: true
+      trade_frequency: "high"  # low, medium, high
+      trade_size_variation: "high"  # low, medium, high
+      price_range_percentage: 0.01  # 1%
+      cycle_interval_ms: 15000  # 15 seconds
+      trades_per_cycle: 2
+      trade_pattern: "trend"  # random, trend, reversion
+      trend_direction: "up"  # up, down, neutral
+      trend_strength: 0.7  # 0.0 to 1.0
+
+# Default strategy parameters
+strategies:
+  OrderBookMakerStrategy:
+    # Default parameters for OrderBookMakerStrategy
+    min_spread_percentage: 0.01
+    max_spread_percentage: 0.05
+    quantity_distribution: "random"
+    
+  MarketPriceTrackerStrategy:
+    # Default parameters for MarketPriceTrackerStrategy
+    update_interval_ms: 30000
+    price_source: "binance"
+    price_change_threshold: 0.005
+    
+  OrderBookAnimatorStrategy:
+    # Default parameters for OrderBookAnimatorStrategy
+    activity_level: "medium"
+    orders_per_cycle: 3
+    cycle_interval_ms: 5000
+    
+  TradeSimulatorStrategy:
+    # Default parameters for TradeSimulatorStrategy
+    trade_frequency: "medium"
+    trade_size_variation: "medium"
+    price_range_percentage: 0.01
+    cycle_interval_ms: 30000
+    trades_per_cycle: 1
+    trade_pattern: "random"
+    trend_direction: "neutral"
+    trend_strength: 0.5
+
+# Account configuration
+accounts:
+  BTCUSDT:
+    liquidity_provider: "arb24"
+  LIBREBTC:
+    liquidity_provider: "jecashking"

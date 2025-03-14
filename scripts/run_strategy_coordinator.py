@@ -11,6 +11,7 @@ import yaml
 import logging
 import time
 import signal
+import threading
 
 # Add the parent directory to the path so we can import the pylibre module
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -39,273 +40,321 @@ def signal_handler(sig, frame):
     print("Please wait while strategies are being stopped...")
     running = False
 
+class DryRunClient:
+    """Mock client for dry run mode that logs actions instead of executing them."""
+    
+    def __init__(self, real_client):
+        """Initialize with the real client to get account info."""
+        self.real_client = real_client
+        self.logger = logging.getLogger('DryRunClient')
+        self.orders = []
+        self.logger.info("DRY RUN MODE ENABLED - No orders will be placed")
+    
+    def __getattr__(self, name):
+        """For any method not explicitly defined, log the call and return a mock result."""
+        def method(*args, **kwargs):
+            self.logger.info(f"DRY RUN: Would call {name} with args: {args} kwargs: {kwargs}")
+            
+            # For methods that would fetch data, pass through to the real client
+            read_only_methods = [
+                'get_account_balance', 'fetch_order_book', 'get_market_price',
+                'get_ticker', 'get_trades', 'get_orders'
+            ]
+            
+            if name in read_only_methods:
+                return getattr(self.real_client, name)(*args, **kwargs)
+            
+            # For methods that would modify state, return mock results
+            if name == 'place_order':
+                order_id = f"dry_run_order_{len(self.orders) + 1}"
+                account = args[0] if args else kwargs.get('account')
+                base_symbol = args[1] if len(args) > 1 else kwargs.get('base_symbol')
+                quote_symbol = args[2] if len(args) > 2 else kwargs.get('quote_symbol')
+                price = args[3] if len(args) > 3 else kwargs.get('price')
+                quantity = args[4] if len(args) > 4 else kwargs.get('quantity')
+                order_type = args[5] if len(args) > 5 else kwargs.get('order_type')
+                
+                order = {
+                    'order_id': order_id,
+                    'account': account,
+                    'base_symbol': base_symbol,
+                    'quote_symbol': quote_symbol,
+                    'price': float(price) if price else None,
+                    'quantity': float(quantity) if quantity else None,
+                    'order_type': order_type,
+                    'status': 'simulated'
+                }
+                
+                self.orders.append(order)
+                self.logger.info(f"DRY RUN: Would place {order_type} order: {quantity} {base_symbol} at {price} {quote_symbol}")
+                return {'order_id': order_id}
+            
+            elif name == 'cancel_order':
+                order_id = args[0] if args else kwargs.get('order_id')
+                self.logger.info(f"DRY RUN: Would cancel order {order_id}")
+                return {'success': True}
+            
+            # Default mock response
+            return {'success': True, 'dry_run': True}
+        
+        return method
+
+def run_coordinator(args, config):
+    """Run the strategy coordinator with the specified arguments."""
+    # Get the trading pair key
+    pair_key = f"{args.base}{args.quote}"
+    
+    # Get account based on role and trading pair
+    account = args.account
+    if account is None and pair_key in config.get('accounts', {}):
+        account = config['accounts'][pair_key].get(args.role)
+    
+    # If still no account, use legacy account configuration
+    if account is None:
+        if args.role == 'liquidity_provider':
+            account = config.get('accounts', {}).get('main')
+        elif args.role == 'trade_simulator_1':
+            account = config.get('accounts', {}).get('simulator_primary')
+        elif args.role == 'trade_simulator_2':
+            account = config.get('accounts', {}).get('simulator_secondary')
+    
+    # If still no account, use a default
+    if account is None:
+        print("Warning: No account specified in config, using 'default'")
+        account = 'default'
+    
+    # Print configuration
+    print("=" * 80)
+    print(f"Strategy Coordinator for {args.base}/{args.quote} using account {account} as {args.role}")
+    print("=" * 80 + "\n")
+    
+    # Load config.yaml for API endpoint and private keys
+    config_file = os.path.join(os.path.dirname(args.config), 'config.yaml')
+    try:
+        with open(config_file, 'r') as f:
+            api_config = yaml.safe_load(f)
+    except Exception as e:
+        print(f"Error loading config from {config_file}: {e}")
+        return
+    
+    print(f"Loading config from: {config_file}")
+    
+    # Determine if we're using mainnet or testnet
+    network = 'mainnet' if 'mainnet' in args.config else 'testnet'
+    
+    # Get API endpoint
+    api_endpoint = config.get('api_endpoint')
+    if api_endpoint is None:
+        api_endpoint = api_config.get(network, {}).get('api_url')
+    
+    if api_endpoint is None:
+        print("Error: No API endpoint specified in config")
+        return
+    
+    # Get private keys
+    private_keys = api_config.get(network, {}).get('private_keys', {})
+    if not private_keys:
+        if args.dry_run:
+            print("Warning: No private keys found in config, but continuing in dry run mode")
+            # Create dummy private keys for dry run mode
+            private_keys = {
+                'jecashking': 'dummy_key_for_dry_run',
+                'arb24': 'dummy_key_for_dry_run'
+            }
+        else:
+            # Ask for private keys interactively
+            print("No private keys found in config. Please enter them interactively:")
+            private_keys = {}
+            
+            # Ask for the account private key that we need
+            if account:
+                print(f"Enter private key for account '{account}':")
+                private_key = input("> ")
+                if private_key:
+                    private_keys[account] = private_key
+                else:
+                    print("Error: No private key provided")
+                    return
+            else:
+                print("Error: No account specified")
+                return
+    
+    print(f"Loaded private keys for accounts: {list(private_keys.keys())}")
+    
+    # Initialize client
+    client = LibreClient(
+        api_url=api_endpoint,
+        verbose=True,
+        network=network
+    )
+    
+    # If dry run mode is enabled, wrap the client with the DryRunClient
+    if args.dry_run:
+        # For dry run mode, we need to manually set the private keys since we're bypassing the config loading
+        if args.dry_run and not client.private_keys:
+            client.private_keys = private_keys
+        client = DryRunClient(client)
+    
+    print(f"Initialized LibreClient with {len(private_keys)} accounts")
+    print(f"Using API endpoint: {api_endpoint}")
+    
+    # Get trading pair configuration
+    if pair_key not in config.get('trading_pairs', {}):
+        print(f"Error: Trading pair {pair_key} not found in config")
+        print(f"Available trading pairs: {list(config.get('trading_pairs', {}).keys())}")
+        return
+    
+    pair_config = config['trading_pairs'][pair_key]
+    print(f"Found pair config for {pair_key}: {pair_config.keys()}")
+    
+    # Create coordinator config
+    coordinator_config = {
+        'account': account,
+        'base_symbol': args.base,
+        'quote_symbol': args.quote,
+        'trading_pair': pair_key,
+        'strategies': []
+    }
+    
+    # Add strategies based on role
+    if args.role == 'liquidity_provider':
+        # Add MarketPriceTrackerStrategy if enabled
+        print(f"Checking price_tracker: enabled={pair_config.get('price_tracker', {}).get('enabled', True)}")
+        if pair_config.get('price_tracker', {}).get('enabled', True):
+            coordinator_config['strategies'].append({
+                'name': 'MarketPriceTrackerStrategy',
+                'parameters': pair_config.get('price_tracker', {})
+            })
+            print(f"Added MarketPriceTrackerStrategy with parameters: {pair_config.get('price_tracker', {})}")
+        
+        # Add OrderBookMakerStrategy if enabled
+        print(f"Checking market_maker: enabled={pair_config.get('market_maker', {}).get('enabled', True)}")
+        if pair_config.get('market_maker', {}).get('enabled', True):
+            coordinator_config['strategies'].append({
+                'name': 'OrderBookMakerStrategy',
+                'parameters': pair_config.get('market_maker', {})
+            })
+            print(f"Added OrderBookMakerStrategy with parameters: {pair_config.get('market_maker', {})}")
+        
+        # Add OrderBookAnimatorStrategy if enabled
+        print(f"Checking animator: enabled={pair_config.get('animator', {}).get('enabled', True)}")
+        if pair_config.get('animator', {}).get('enabled', True):
+            coordinator_config['strategies'].append({
+                'name': 'OrderBookAnimatorStrategy',
+                'parameters': pair_config.get('animator', {})
+            })
+            print(f"Added OrderBookAnimatorStrategy with parameters: {pair_config.get('animator', {})}")
+    
+    elif args.role.startswith('trade_simulator'):
+        # For trade simulators, only add TradeSimulatorStrategy
+        print(f"Checking simulator: enabled={pair_config.get('simulator', {}).get('enabled', True)}")
+        if pair_config.get('simulator', {}).get('enabled', True):
+            # Get the counterparty account (liquidity provider)
+            counterparty_account = None
+            if pair_key in config.get('accounts', {}):
+                counterparty_account = config['accounts'][pair_key].get('liquidity_provider')
+            
+            # Create simulator parameters
+            simulator_params = pair_config.get('simulator', {}).copy()
+            
+            # Add counterparty account if available
+            if counterparty_account:
+                simulator_params['counterparty_account'] = counterparty_account
+            
+            coordinator_config['strategies'].append({
+                'name': 'TradeSimulatorStrategy',
+                'parameters': simulator_params
+            })
+            print(f"Added TradeSimulatorStrategy with parameters: {simulator_params}")
+    
+    # Create coordinator
+    coordinator = StrategyCoordinator(client, coordinator_config)
+    
+    # Add strategies to the coordinator
+    for strategy_config in coordinator_config['strategies']:
+        strategy_name = strategy_config['name']
+        strategy_params = strategy_config['parameters']
+        print(f"Adding strategy {strategy_name} to coordinator")
+        coordinator.add_strategy(strategy_name, strategy_params)
+    
+    # Start dashboard if requested
+    if args.dashboard:
+        from src.pylibre.monitoring.dashboard import start_dashboard
+        dashboard_thread = threading.Thread(
+            target=start_dashboard,
+            args=(coordinator, args.dashboard_port),
+            daemon=True
+        )
+        dashboard_thread.start()
+    
+    # Start the price tracker first if it exists
+    if 'MarketPriceTrackerStrategy' in coordinator.strategies:
+        print("Starting MarketPriceTrackerStrategy first to establish price")
+        price_tracker = coordinator.strategies['MarketPriceTrackerStrategy']
+        price_tracker.running = True
+        
+        # Run the price tracker for a short time to establish the price
+        initial_price = price_tracker.fetch_current_price()
+        price_tracker.update_price(initial_price)
+        print(f"Initial price set to {initial_price} {args.quote}")
+        
+        # Force update the price in all other strategies
+        for strategy_type, strategy in coordinator.strategies.items():
+            if strategy_type != 'MarketPriceTrackerStrategy' and hasattr(strategy, 'on_price_update'):
+                print(f"Updating price for {strategy_type}")
+                strategy.on_price_update(initial_price)
+    
+    # Now start all strategies
+    coordinator.start()
+
 def main():
-    """Main function to run the StrategyCoordinator."""
-    print("\nStarting Strategy Coordinator Script - Enhanced Version")
-    parser = argparse.ArgumentParser(description='Run the StrategyCoordinator')
+    """Main function to run the strategy coordinator."""
+    parser = argparse.ArgumentParser(description='Run the strategy coordinator')
     
     # Required arguments
     parser.add_argument('--base', required=True, help='Base symbol (e.g., LIBRE)')
     parser.add_argument('--quote', required=True, help='Quote symbol (e.g., BTC)')
     
     # Optional arguments
-    parser.add_argument('--account', help='Override account for trading (optional)')
-    parser.add_argument('--role', choices=['liquidity_provider', 'trade_simulator_1', 'trade_simulator_2'], 
-                        help='Role of this instance (optional, defaults to liquidity_provider)')
+    parser.add_argument('--account', help='Account to use (overrides config)')
+    parser.add_argument('--role', default='liquidity_provider', 
+                        choices=['liquidity_provider', 'trade_simulator_1', 'trade_simulator_2'],
+                        help='Role to run (liquidity_provider, trade_simulator_1, trade_simulator_2)')
     parser.add_argument('--config', default='config/strategies.yaml', help='Path to config file')
     parser.add_argument('--dashboard', action='store_true', help='Start the monitoring dashboard')
     parser.add_argument('--dashboard-port', type=int, default=5000, help='Port for the dashboard server')
+    parser.add_argument('--dry-run', action='store_true', help='Simulate running without placing actual orders')
     
     args = parser.parse_args()
     
     # Load configuration
-    config = load_config(args.config)
-    
-    # Get API endpoint from config
-    api_endpoint = config.get('api_endpoint', 'https://testnet.libre.org')
-    
-    # Determine which account to use based on trading pair and role
-    pair_key = f"{args.base}{args.quote}"
-    role = args.role or 'liquidity_provider'
-    
-    # If account is explicitly provided, use that
-    if args.account:
-        account = args.account
-    else:
-        # Otherwise, get account from config based on pair and role
-        pair_accounts = config.get('accounts', {}).get(pair_key, {})
-        if not pair_accounts:
-            print(f"No account configuration found for pair {pair_key}")
-            return
-        
-        account = pair_accounts.get(role)
-        if not account:
-            print(f"No account found for role {role} in pair {pair_key}")
-            return
-    
-    # Set up logging - StrategyLogger already configures handlers internally
-    logger = StrategyLogger(f"Coordinator_{account}_{pair_key}", level=LogLevel.INFO)
-    
-    # Print banner
-    print("\n" + "=" * 80)
-    print(f"Strategy Coordinator for {args.base}/{args.quote} using account {account} as {role}")
-    print("=" * 80 + "\n")
-    logger.info(f"Starting StrategyCoordinator for {args.base}/{args.quote}")
-    
-    # Initialize LibreClient
-    client = LibreClient(api_url=api_endpoint, verbose=True)
-    
-    # Create coordinator configuration
-    coordinator_config = {
-        'account': account,
-        'base_symbol': args.base,
-        'quote_symbol': args.quote,
-        'strategies': {}
-    }
-    
-    # Get trading pair specific configuration
-    pair_config = config.get('trading_pairs', {}).get(pair_key, {})
-    
-    # Add strategies based on role
-    if pair_config:
-        logger.info(f"Found configuration for trading pair {pair_key}")
-        
-        if role == 'liquidity_provider':
-            # Liquidity providers run MarketPriceTracker, OrderBookMaker, and OrderBookAnimator
-            
-            # Add MarketPriceTrackerStrategy if configured
-            if 'price_tracker' in pair_config:
-                logger.info("Adding MarketPriceTrackerStrategy")
-                coordinator_config['strategies']['MarketPriceTrackerStrategy'] = pair_config['price_tracker']
-                # Ensure the price_source is correctly set (not 'source')
-                if 'source' in coordinator_config['strategies']['MarketPriceTrackerStrategy']:
-                    coordinator_config['strategies']['MarketPriceTrackerStrategy']['price_source'] = \
-                        coordinator_config['strategies']['MarketPriceTrackerStrategy'].pop('source')
-            
-            # Add OrderBookMakerStrategy if configured
-            if 'market_maker' in pair_config:
-                logger.info("Adding OrderBookMakerStrategy")
-                coordinator_config['strategies']['OrderBookMakerStrategy'] = pair_config['market_maker']
-            
-            # Add OrderBookAnimatorStrategy if configured
-            if 'animator' in pair_config:
-                logger.info("Adding OrderBookAnimatorStrategy")
-                coordinator_config['strategies']['OrderBookAnimatorStrategy'] = pair_config['animator']
-                
-        elif role.startswith('trade_simulator'):
-            # Trade simulators only run TradeSimulatorStrategy
-            
-            # Add TradeSimulatorStrategy if configured
-            if 'simulator' in pair_config:
-                logger.info("Adding TradeSimulatorStrategy")
-                simulator_config = pair_config['simulator'].copy()
-                
-                # Get the liquidity provider account for this pair
-                liquidity_provider = config.get('accounts', {}).get(pair_key, {}).get('liquidity_provider')
-                if liquidity_provider:
-                    # Set the counterparty account for trade simulation
-                    simulator_config['counterparty_account'] = liquidity_provider
-                
-                coordinator_config['strategies']['TradeSimulatorStrategy'] = simulator_config
-    else:
-        logger.warning(f"No configuration found for trading pair {pair_key}")
-        
-        # Set default configurations
-        coordinator_config['strategies']['MarketPriceTrackerStrategy'] = {
-            'enabled': True,
-            'update_interval_ms': 30000,
-            'price_source': 'binance',
-            'price_change_threshold': 0.005
-        }
-        
-        coordinator_config['strategies']['OrderBookMakerStrategy'] = {
-            'enabled': True,
-            'num_orders': 30,
-            'min_spread_percentage': 0.01,
-            'max_spread_percentage': 0.05,
-            'quantity_distribution': 'random',
-            'update_interval_ms': 60000
-        }
-    
-    # Start the dashboard if requested
-    dashboard = None
-    if args.dashboard:
-        logger.info(f"Starting monitoring dashboard on port {args.dashboard_port}")
-        dashboard = start_dashboard(port=args.dashboard_port)
-    
-    # Display configured strategies
-    logger.info("Configured strategies:")
-    for strategy_name, strategy_config in coordinator_config['strategies'].items():
-        if strategy_config.get('enabled', True):
-            logger.info(f"  - {strategy_name}: ENABLED")
-            # Display key parameters for each strategy
-            if strategy_name == 'MarketPriceTrackerStrategy':
-                logger.info(f"    Price Source: {strategy_config.get('price_source', 'default')}")
-                logger.info(f"    Update Interval: {strategy_config.get('update_interval_ms', 'default')}ms")
-            elif strategy_name == 'OrderBookMakerStrategy':
-                logger.info(f"    Orders: {strategy_config.get('num_orders', 'default')}")
-                logger.info(f"    Spread: {strategy_config.get('min_spread_percentage', 'default')} - {strategy_config.get('max_spread_percentage', 'default')}")
-            elif strategy_name == 'TradeSimulatorStrategy':
-                logger.info(f"    Trades Per Cycle: {strategy_config.get('trades_per_cycle', 'default')}")
-                logger.info(f"    Secondary Account: {strategy_config.get('secondary_account', account)}")
-        else:
-            logger.info(f"  - {strategy_name}: DISABLED")
-    
-    # Create and start the coordinator
     try:
-        # Register signal handler for Ctrl+C
-        signal.signal(signal.SIGINT, signal_handler)
-        
-        # Create coordinator
-        logger.info(f"Creating StrategyCoordinator for {args.base}/{args.quote} using account {account}")
-        coordinator = StrategyCoordinator(client, coordinator_config, logger)
-        
-        # Start coordinator
-        logger.info("Starting coordinator and all enabled strategies...")
-        coordinator.start()
-        logger.info("Coordinator started successfully!")
-        
-        # Print detailed initial status report
-        if hasattr(coordinator, 'print_status_report'):
-            logger.info("\nInitial Status Report:")
-            coordinator.print_status_report()
-        else:
-            # Fallback to basic status display
-            logger.info("\nInitial Strategy Status:")
-            logger.info("-" * 50)
-            for strategy_name in coordinator_config['strategies']:
-                if coordinator_config['strategies'][strategy_name].get('enabled', True):
-                    if hasattr(coordinator, 'strategy_statuses') and strategy_name in coordinator.strategy_statuses:
-                        status = coordinator.strategy_statuses[strategy_name].get('status', 'unknown')
-                        logger.info(f"  {strategy_name}: {status.upper()}")
-                    else:
-                        logger.info(f"  {strategy_name}: UNKNOWN")
-            logger.info("-" * 50)
-        
-        # Keep the main thread alive with periodic status updates
-        status_interval = 60  # Print status every minute
-        last_status_print = time.time()
-        
-        logger.info("Coordinator is running. Press Ctrl+C to stop.")
-        while running and coordinator.is_running():
-            current_time = time.time()
-            
-            # Print periodic status updates
-            if current_time - last_status_print >= status_interval:
-                logger.info("\nPeriodic Status Update:")
-                
-                # Use enhanced status reporting if available
-                if hasattr(coordinator, 'print_status_report'):
-                    coordinator.print_status_report()
-                # Fallback to basic status display
-                elif hasattr(coordinator, 'strategy_statuses'):
-                    logger.info("-" * 50)
-                    for strategy_name, status_data in coordinator.strategy_statuses.items():
-                        status = status_data.get('status', 'unknown')
-                        cycles = status_data.get('cycles_completed', 0)
-                        errors = status_data.get('errors', 0)
-                        logger.info(f"  {strategy_name}: {status.upper()}, Cycles: {cycles}, Errors: {errors}")
-                    logger.info("-" * 50)
-                else:
-                    logger.info("  No status information available")
-                
-                last_status_print = current_time
-                
-            time.sleep(1)
-            
+        with open(args.config, 'r') as f:
+            config = yaml.safe_load(f)
     except Exception as e:
-        logger.error(f"Error running coordinator: {e}")
-    finally:
-        # Stop the coordinator
-        if 'coordinator' in locals():
-            logger.info("Stopping coordinator and all strategies...")
-            coordinator.stop()
-            logger.info("All strategies have been stopped")
-        
-        # Stop the dashboard if it was started
-        if dashboard:
-            logger.info("Stopping dashboard...")
-            stop_dashboard()
-        
-        # Print final status report
-        logger.info("\nFinal Status Report:")
-        if hasattr(coordinator, 'get_status_report'):
-            # Get the status report data
-            report = coordinator.get_status_report()
-            
-            # Print summary information
-            logger.info("-" * 50)
-            logger.info(f"Trading Pair: {args.base}/{args.quote}")
-            logger.info(f"Account: {args.account}")
-            
-            # Calculate total runtime
-            if 'coordinator' in report and 'runtime_seconds' in report['coordinator']:
-                runtime = report['coordinator']['runtime_seconds']
-                hours, remainder = divmod(runtime, 3600)
-                minutes, seconds = divmod(remainder, 60)
-                runtime_str = f"{int(hours)}h {int(minutes)}m {int(seconds)}s"
-                logger.info(f"Total Runtime: {runtime_str}")
-            
-            # Print strategy summary
-            if 'strategies' in report:
-                strategies_list = list(report['strategies'].keys())
-                logger.info(f"Strategies: {', '.join(strategies_list)}")
-                
-                # Print cycles and errors summary
-                total_cycles = sum(s.get('cycles_completed', 0) for s in report['strategies'].values())
-                total_errors = sum(s.get('errors', 0) for s in report['strategies'].values())
-                logger.info(f"Total Cycles: {total_cycles}")
-                logger.info(f"Total Errors: {total_errors}")
-        else:
-            # Fallback to basic summary
-            logger.info("-" * 50)
-            logger.info(f"Trading Pair: {args.base}/{args.quote}")
-            logger.info(f"Account: {args.account}")
-            enabled_strategies = [s for s, c in coordinator_config['strategies'].items() if c.get('enabled', True)]
-            logger.info(f"Strategies: {', '.join(enabled_strategies)}")
-            
-        logger.info("-" * 50)
-        logger.info("Coordinator stopped successfully")
+        print(f"Error loading config from {args.config}: {e}")
+        return
+    
+    # Run the coordinator
+    run_coordinator(args, config)
 
 if __name__ == "__main__":
-    main() 
+    try:
+        # Setup logging
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            handlers=[logging.StreamHandler()]
+        )
+        
+        # Print banner
+        print("\nStarting Strategy Coordinator Script - Enhanced Version\n")
+        
+        # Run the main function
+        main()
+    except KeyboardInterrupt:
+        print("\nExiting due to keyboard interrupt")
+    except Exception as e:
+        print(f"Error: {e}")
+        import traceback
+        traceback.print_exc()

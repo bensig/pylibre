@@ -18,5 +18,65 @@
         "total_pnl": []
       }
     }
+  },
+  "jecashking": {
+    "LIBREBTC": {
+      "initial_balance_base": 0,
+      "initial_balance_quote": 0,
+      "current_balance_base": 0,
+      "current_balance_quote": 0,
+      "trades_executed": 0,
+      "volume_base": 0,
+      "volume_quote": 0,
+      "realized_pnl": 0,
+      "unrealized_pnl": 0,
+      "total_pnl": 0,
+      "history": {
+        "timestamps": [],
+        "realized_pnl": [],
+        "unrealized_pnl": [],
+        "total_pnl": []
+      }
+    }
+  },
+  "arb24": {
+    "BTCUSDT": {
+      "initial_balance_base": 0,
+      "initial_balance_quote": 0,
+      "current_balance_base": 0,
+      "current_balance_quote": 0,
+      "trades_executed": 0,
+      "volume_base": 0,
+      "volume_quote": 0,
+      "realized_pnl": 0,
+      "unrealized_pnl": 0,
+      "total_pnl": 0,
+      "history": {
+        "timestamps": [],
+        "realized_pnl": [],
+        "unrealized_pnl": [],
+        "total_pnl": []
+      }
+    }
+  },
+  "dextrader": {
+    "BTCUSDT": {
+      "initial_balance_base": 0,
+      "initial_balance_quote": 0,
+      "current_balance_base": 0,
+      "current_balance_quote": 0,
+      "trades_executed": 0,
+      "volume_base": 0,
+      "volume_quote": 0,
+      "realized_pnl": 0,
+      "unrealized_pnl": 0,
+      "total_pnl": 0,
+      "history": {
+        "timestamps": [],
+        "realized_pnl": [],
+        "unrealized_pnl": [],
+        "total_pnl": []
+      }
+    }
   }
 }

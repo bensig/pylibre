@@ -250,7 +250,7 @@ class StrategyCoordinator:
                         })
                         
                         # Log progress periodically
-                        if orders_updated > 0:
+                        if orders_updated is not None and orders_updated > 0:
                             self.logger.info(f"{strategy_type}: Updated {orders_updated} orders in cycle {cycle_count}")
                         
                     else:

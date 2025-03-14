@@ -80,10 +80,13 @@ class OrderBookMakerStrategy(BaseStrategy):
             if self.base_symbol == 'BTC' and self.quote_symbol == 'USDT':
                 price = Decimal('50000')
             elif self.base_symbol == 'LIBRE' and self.quote_symbol == 'BTC':
-                # For LIBRE/BTC, we need a higher price to meet minimum BTC value requirements
-                # Minimum BTC value is 0.0001, with max LIBRE of 1000, we need at least 0.0000001 BTC price
-                # But to ensure we meet the minimum, let's use 0.0000002 BTC (0.0001 BTC / 500 LIBRE)
-                price = Decimal('0.0000002')
+                # Try to get the price from the price tracker's fallback price
+                fallback_price = self.parameters.get('fallback_price')
+                if fallback_price:
+                    price = Decimal(str(fallback_price))
+                else:
+                    # Use a reasonable default if no fallback price is provided
+                    price = Decimal('0.0000000084')  # 0.84 sats
             elif self.base_symbol == 'LIBRE' and self.quote_symbol == 'USDT':
                 price = Decimal('0.005')
             elif self.base_symbol == 'ETH' and self.quote_symbol == 'USDT':
@@ -92,10 +95,6 @@ class OrderBookMakerStrategy(BaseStrategy):
                 price = Decimal('0.06')
             else:
                 price = Decimal('1.0')
-        
-        # For LIBRE/BTC, always ensure the price is at least 0.0000002
-        if self.base_symbol == 'LIBRE' and self.quote_symbol == 'BTC' and price < Decimal('0.0000002'):
-            price = Decimal('0.0000002')
         
         # Store the price
         self._market_price = price
@@ -129,14 +128,6 @@ class OrderBookMakerStrategy(BaseStrategy):
         # Calculate price range
         min_price = center_price * (Decimal('1') + self.min_spread_percentage)
         max_price = center_price * (Decimal('1') + self.max_spread_percentage)
-        
-        # For LIBRE/BTC, ensure prices are at least 0.00000001
-        if self.base_symbol == 'LIBRE' and self.quote_symbol == 'BTC':
-            if min_price < Decimal('0.00000001'):
-                min_price = Decimal('0.00000001')
-            if max_price < Decimal('0.00000001'):
-                # If max_price is too low, ensure we have a proper spread
-                max_price = min_price * Decimal('1.05')
         
         self.logger.info(f"Sell price range: {min_price} to {max_price} {self.quote_symbol}")
         
@@ -173,20 +164,6 @@ class OrderBookMakerStrategy(BaseStrategy):
         # Calculate price range
         min_price = center_price * (Decimal('1') - self.max_spread_percentage)
         max_price = center_price * (Decimal('1') - self.min_spread_percentage)
-        
-        # For LIBRE/BTC, ensure prices are at least 0.00000001
-        if self.base_symbol == 'LIBRE' and self.quote_symbol == 'BTC':
-            if min_price < Decimal('0.00000001'):
-                # If min_price is too low, set it to a reasonable value
-                min_price = center_price * Decimal('0.95')
-                if min_price < Decimal('0.00000001'):
-                    min_price = Decimal('0.00000001')
-            if max_price < Decimal('0.00000001'):
-                max_price = Decimal('0.00000001')
-            
-            # Ensure we have a proper spread
-            if max_price <= min_price:
-                max_price = min_price * Decimal('1.05')
         
         self.logger.info(f"Buy price range: {min_price} to {max_price} {self.quote_symbol}")
         
