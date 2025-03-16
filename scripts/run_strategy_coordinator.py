@@ -145,14 +145,14 @@ def run_coordinator(args, config):
     # Get API endpoint
     api_endpoint = config.get('api_endpoint')
     if api_endpoint is None:
-        api_endpoint = api_config.get(network, {}).get('api_url')
+        api_endpoint = api_config.get('networks', {}).get(network, {}).get('api_url')
     
     if api_endpoint is None:
         print("Error: No API endpoint specified in config")
         return
     
     # Get private keys
-    private_keys = api_config.get(network, {}).get('private_keys', {})
+    private_keys = api_config.get('networks', {}).get(network, {}).get('private_keys', {})
     if not private_keys:
         if args.dry_run:
             print("Warning: No private keys found in config, but continuing in dry run mode")

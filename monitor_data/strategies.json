@@ -228,8 +228,8 @@
       "update_interval_ms": 60000
     },
     "status": "initialized",
-    "start_time": "2025-03-14T10:09:34.020623",
-    "last_active": "2025-03-14T10:09:34.021900"
+    "start_time": "2025-03-16T13:32:02.289733",
+    "last_active": "2025-03-16T13:32:02.291812"
   },
   "OrderBookMakerStrategy_jecashking_LIBRE_BTC": {
     "id": "OrderBookMakerStrategy_jecashking_LIBRE_BTC",
@@ -322,8 +322,8 @@
       "price_change_threshold": 0.005
     },
     "status": "initialized",
-    "start_time": "2025-03-14T10:09:34.012643",
-    "last_active": "2025-03-14T10:09:34.020572"
+    "start_time": "2025-03-16T13:32:02.287125",
+    "last_active": "2025-03-16T13:32:02.289503"
   },
   "OrderBookAnimatorStrategy_arb24_BTC_USDT": {
     "id": "OrderBookAnimatorStrategy_arb24_BTC_USDT",
@@ -337,7 +337,7 @@
       "cycle_interval_ms": 5000
     },
     "status": "initialized",
-    "start_time": "2025-03-14T10:09:34.021948",
-    "last_active": "2025-03-14T10:09:34.023212"
+    "start_time": "2025-03-16T13:32:02.292109",
+    "last_active": "2025-03-16T13:32:02.293924"
   }
 }
