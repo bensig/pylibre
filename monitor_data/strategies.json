@@ -134,14 +134,14 @@
     "trading_pair": "LIBRE/BTC",
     "account": "bentester",
     "parameters": {
+      "source": "fixed",
       "update_interval_ms": 60000,
-      "price_source": "fixed",
-      "fixed_price": 2e-07,
-      "price_change_threshold": 0.01
+      "price_change_threshold": 0.01,
+      "fallback_price": 2e-07
     },
-    "status": "running",
-    "start_time": "2025-03-13T11:10:45.267198",
-    "last_active": "2025-03-13T11:10:45.272016"
+    "status": "initialized",
+    "start_time": "2025-03-20T19:12:19.121715",
+    "last_active": "2025-03-20T19:12:19.123862"
   },
   "OrderBookMakerStrategy_bentester_LIBRE_BTC": {
     "id": "OrderBookMakerStrategy_bentester_LIBRE_BTC",
@@ -149,17 +149,11 @@
     "trading_pair": "LIBRE/BTC",
     "account": "bentester",
     "parameters": {
-      "num_orders": 30,
-      "min_spread_percentage": 0.01,
-      "max_spread_percentage": 0.15,
-      "quantity_distribution": "random",
-      "update_interval_ms": 120000,
-      "max_order_size_base": 1000,
-      "min_order_size_base": 100
+      "cancel_existing": false
     },
-    "status": "running",
-    "start_time": "2025-03-13T11:10:45.268936",
-    "last_active": "2025-03-13T11:10:45.777532"
+    "status": "initialized",
+    "start_time": "2025-03-20T19:12:19.123957",
+    "last_active": "2025-03-20T19:12:19.125677"
   },
   "OrderBookAnimatorStrategy_bentester_LIBRE_BTC": {
     "id": "OrderBookAnimatorStrategy_bentester_LIBRE_BTC",
@@ -169,13 +163,11 @@
     "parameters": {
       "activity_level": "high",
       "orders_per_cycle": 5,
-      "cycle_interval_ms": 3000,
-      "max_order_size_base": 500,
-      "min_order_size_base": 50
+      "cycle_interval_ms": 3000
     },
-    "status": "stopped",
-    "start_time": "2025-03-13T11:10:45.269887",
-    "last_active": "2025-03-13T11:11:25.566145"
+    "status": "initializing",
+    "start_time": "2025-03-20T19:12:19.125776",
+    "last_active": "2025-03-20T19:12:19.125777"
   },
   "TradeSimulatorStrategy_bentester_LIBRE_BTC": {
     "id": "TradeSimulatorStrategy_bentester_LIBRE_BTC",
@@ -210,9 +202,9 @@
       "price_change_threshold": 0.01,
       "fallback_price": 8.4e-09
     },
-    "status": "initialized",
-    "start_time": "2025-03-14T00:50:14.964133",
-    "last_active": "2025-03-14T00:50:14.971018"
+    "status": "stopped",
+    "start_time": "2025-03-20T19:15:36.272191",
+    "last_active": "2025-03-20T19:18:29.711995"
   },
   "OrderBookMakerStrategy_arb24_BTC_USDT": {
     "id": "OrderBookMakerStrategy_arb24_BTC_USDT",
@@ -220,12 +212,11 @@
     "trading_pair": "BTC/USDT",
     "account": "arb24",
     "parameters": {
-      "dry_run": true,
       "cancel_existing": false
     },
     "status": "running",
-    "start_time": "2025-03-20T16:46:15.715944",
-    "last_active": "2025-03-20T16:46:17.292698"
+    "start_time": "2025-03-20T19:19:28.422759",
+    "last_active": "2025-03-20T19:19:52.954857"
   },
   "OrderBookMakerStrategy_jecashking_LIBRE_BTC": {
     "id": "OrderBookMakerStrategy_jecashking_LIBRE_BTC",
@@ -233,16 +224,11 @@
     "trading_pair": "LIBRE/BTC",
     "account": "jecashking",
     "parameters": {
-      "enabled": true,
-      "num_orders": 30,
-      "min_spread_percentage": 0.01,
-      "max_spread_percentage": 0.15,
-      "quantity_distribution": "random",
-      "update_interval_ms": 120000
+      "cancel_existing": false
     },
-    "status": "initialized",
-    "start_time": "2025-03-14T00:50:14.971087",
-    "last_active": "2025-03-14T00:50:14.972467"
+    "status": "stopped",
+    "start_time": "2025-03-20T19:15:36.274452",
+    "last_active": "2025-03-20T19:18:10.130941"
   },
   "OrderBookAnimatorStrategy_jecashking_LIBRE_BTC": {
     "id": "OrderBookAnimatorStrategy_jecashking_LIBRE_BTC",
@@ -253,11 +239,14 @@
       "enabled": true,
       "activity_level": "high",
       "orders_per_cycle": 5,
-      "cycle_interval_ms": 3000
+      "cycle_interval_ms": 3000,
+      "max_active_orders": 20,
+      "max_orders_per_side": 10,
+      "cleanup_frequency": 10
     },
-    "status": "initializing",
-    "start_time": "2025-03-14T00:50:14.972517",
-    "last_active": "2025-03-14T00:50:14.972518"
+    "status": "stopped",
+    "start_time": "2025-03-20T19:15:36.276279",
+    "last_active": "2025-03-20T19:18:31.949254"
   },
   "MarketPriceTrackerStrategy_dextrader_BTC_USDT": {
     "id": "MarketPriceTrackerStrategy_dextrader_BTC_USDT",
@@ -316,12 +305,11 @@
       "price_source": "binance",
       "update_interval_ms": 60000,
       "price_change_threshold": 0.005,
-      "fallback_price": 84273.28,
-      "dry_run": true
+      "fallback_price": 84273.28
     },
     "status": "running",
-    "start_time": "2025-03-20T16:46:15.710835",
-    "last_active": "2025-03-20T16:46:16.792067"
+    "start_time": "2025-03-20T19:19:28.417264",
+    "last_active": "2025-03-20T19:19:52.454160"
   },
   "OrderBookAnimatorStrategy_arb24_BTC_USDT": {
     "id": "OrderBookAnimatorStrategy_arb24_BTC_USDT",
@@ -335,11 +323,10 @@
       "cycle_interval_ms": 5000,
       "max_active_orders": 20,
       "max_orders_per_side": 10,
-      "cleanup_frequency": 10,
-      "dry_run": true
+      "cleanup_frequency": 10
     },
     "status": "running",
-    "start_time": "2025-03-20T16:46:15.718759",
-    "last_active": "2025-03-20T16:46:17.793240"
+    "start_time": "2025-03-20T19:19:28.425286",
+    "last_active": "2025-03-20T19:19:53.455637"
   }
 }

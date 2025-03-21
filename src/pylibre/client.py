@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 import requests
 import sys
 import yaml
+import logging
 
 def extract_error_message(error_json):
     """Extract the relevant error message from a JSON error response"""
@@ -68,16 +69,9 @@ class LibreClient:
         
         # Load keys from config
         self.load_account_keys(config_path)
-        
-        if self.verbose:
-            print(f"Initialized LibreClient with {len(self.private_keys)} accounts")
-            print(f"Using API endpoint: {self.api_url}")
 
     def load_account_keys(self, config_path):
         """Load private keys from config YAML file."""
-        if self.verbose:
-            print(f"Loading config from: {config_path}")
-            
         try:
             with open(config_path, 'r') as f:
                 config = yaml.safe_load(f)
@@ -90,9 +84,6 @@ class LibreClient:
             if not self.api_url and 'api_url' in network_config:
                 self.api_url = network_config['api_url']
                 self.net = Net(host=self.api_url)
-            
-            if self.verbose:
-                print("Loaded private keys for accounts:", list(self.private_keys.keys()))
                 
         except Exception as e:
             if self.verbose:
@@ -131,9 +122,6 @@ class LibreClient:
                 contract = token_info["contract"]
                 precision = token_info["precision"]
             
-            if self.verbose:
-                print(f"Using contract: {contract} for symbol: {symbol}")
-
             response = requests.post(
                 f"{self.api_url}/v1/chain/get_currency_balance",
                 json={
@@ -178,10 +166,6 @@ class LibreClient:
                 payload["index_position"] = index_position
             if key_type:
                 payload["key_type"] = key_type
-            
-            if self.verbose:
-                print(f"\nAPI Request to /v1/chain/get_table_rows:")
-                print(f"Payload: {payload}")
 
             response = requests.post(
                 f"{self.api_url}/v1/chain/get_table_rows",
@@ -191,8 +175,6 @@ class LibreClient:
             return {"success": True, "rows": response.json()["rows"]}
             
         except Exception as e:
-            if self.verbose:
-                print(f"Error response: {e.response.text if hasattr(e, 'response') else str(e)}")
             return {"success": False, "error": f"Failed to get table rows: {str(e)}"}
 
     def execute_action(self, contract, action_name, data, actor, permission="active"):
@@ -245,9 +227,6 @@ class LibreClient:
         try:
             while more:
                 try:
-                    print(f"\rFetching rows... (found {total_rows} so far)", 
-                          end="", flush=True, file=sys.stderr)
-                    
                     response = requests.post(
                         f"{self.api_url}/v1/chain/get_table_rows",
                         json={
@@ -277,15 +256,11 @@ class LibreClient:
                             break
                         
                 except requests.exceptions.RequestException as e:
-                    print(f"\nError fetching rows: {str(e)}", file=sys.stderr)
                     raise Exception(f"Failed to get table: {str(e)}")
                 
-            print(f"\nFetched {total_rows} rows total", file=sys.stderr)
             return all_rows  # Return rows directly
             
         except KeyboardInterrupt:
-            print(f"\nFetch interrupted. Returning {total_rows} rows that were collected", 
-                  file=sys.stderr)
             return all_rows
 
     def transfer(self, from_account, to_account, quantity, memo="", contract=None):
@@ -298,6 +273,9 @@ class LibreClient:
                     error=f"Invalid quantity format. Expected 'amount SYMBOL' but got: {quantity}")
             
             amount, symbol = parts
+            
+            # Determine if this is a BTC sell order
+            is_btc_sell = symbol == "BTC" and memo and memo.startswith("sell:")
             
             # Define token specifications
             TOKEN_SPECS = {
@@ -370,13 +348,9 @@ class LibreClient:
                         error=f"Error formatting amount: {e}")
 
             if self.verbose:
-                print(f"\nTransfer Details:")
-                print(f"From: {from_account}")
-                print(f"To: {to_account}")
-                print(f"Amount: {quantity}")
-                print(f"Contract: {contract}")
-                print(f"Memo: {memo}")
-
+                # Completely skip printing transaction details 
+                pass
+                
             # Create transfer data
             action_data = [
                 Data(name="from", value=types.Name(from_account)),
@@ -441,7 +415,8 @@ class LibreClient:
 
             # Process the response from the blockchain
             if self.verbose:
-                print(f"\nBlockchain response: {response}")
+                # Skip printing blockchain response - too verbose
+                pass
             
             # IMPORTANT: For BTC transactions, especially sell orders, the blockchain might
             # accept the transaction even if the response doesn't have a clear transaction_id
@@ -464,8 +439,8 @@ class LibreClient:
             # For BTC sell orders, be more lenient in determining success
             if is_btc_sell and not has_error:
                 if self.verbose:
-                    print(f"BTC sell order appears successful (no explicit error)")
-                    print(f"Note: The blockchain may accept this transaction even without a clear transaction ID")
+                    # Suppress BTC sell order success messages
+                    pass
                 return self.format_response(True, data={
                     "transaction_id": tx_id or "assumed_success_no_id",
                     "full_response": response,
@@ -475,7 +450,8 @@ class LibreClient:
             # Standard success detection for other transactions
             if tx_id or processed:
                 if self.verbose:
-                    print(f"Transaction successful with ID: {tx_id}")
+                    # Suppress transaction success messages
+                    pass
                 return self.format_response(True, data={
                     "transaction_id": tx_id or "unknown_id",
                     "full_response": response
@@ -497,7 +473,7 @@ class LibreClient:
             
             # Add a note for BTC sell orders that CLI commands might still work
             if is_btc_sell:
-                error_msg += " (Note: CLI commands for BTC sell orders may still succeed)"
+                error_msg += " (CLI commands may still work)"
             
             return self.format_response(False, error=error_msg)
 

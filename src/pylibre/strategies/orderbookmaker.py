@@ -715,23 +715,11 @@ class OrderBookMakerStrategy(BaseStrategy):
             
             # Log result - detailed info at INFO level
             if result:
-                # For orders with tiny values, log at DEBUG level only to reduce noise
-                if total_value < self.min_quote_value * Decimal('2'):
-                    log_level = "debug"
-                else:
-                    log_level = "info"
-                    
-                # Log at the appropriate level
+                # Log at debug level to reduce noise
                 if order_type == 'sell':
-                    if log_level == "info":
-                        self.logger.info(f"💰 {self.account}: SELL {quantity_value} {self.base_symbol} at {price} {self.quote_symbol} (Total: {total_value} {self.quote_symbol})")
-                    else:
-                        self.logger.debug(f"💰 {self.account}: SELL {quantity_value} {self.base_symbol} at {price} {self.quote_symbol} (Total: {total_value} {self.quote_symbol})")
+                    self.logger.debug(f"💰 {self.account}: SELL {quantity_value} {self.base_symbol} at {price} {self.quote_symbol} (Total: {total_value} {self.quote_symbol})")
                 else:
-                    if log_level == "info":
-                        self.logger.info(f"💸 {self.account}: BUY {quantity_value} {self.base_symbol} at {price} {self.quote_symbol} (Total: {total_value} {self.quote_symbol})")
-                    else:
-                        self.logger.debug(f"💸 {self.account}: BUY {quantity_value} {self.base_symbol} at {price} {self.quote_symbol} (Total: {total_value} {self.quote_symbol})")
+                    self.logger.debug(f"💸 {self.account}: BUY {quantity_value} {self.base_symbol} at {price} {self.quote_symbol} (Total: {total_value} {self.quote_symbol})")
                     
                 return True
             else:

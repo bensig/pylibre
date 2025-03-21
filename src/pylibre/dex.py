@@ -182,8 +182,8 @@ class DexClient:
             else:
                 action = f"{order_type}:{quantity_dec:.{base_precision}f} {base_symbol}:{price_dec:.{quote_precision}f} {quote_symbol}"
             
-            # Concise INFO level log for the order placement
-            logger.info(f"Order: {order_type.upper()} {quantity_dec:.{base_precision}f} {base_symbol} @ {price_dec:.{quote_precision}f} {quote_symbol}")
+            # Concise DEBUG level log for the order placement
+            logger.debug(f"Order: {order_type.upper()} {quantity_dec:.{base_precision}f} {base_symbol} @ {price_dec:.{quote_precision}f} {quote_symbol}")
             
             # Detailed DEBUG level log for transfer details
             logger.debug(f"Transfer details:")
@@ -249,7 +249,7 @@ class DexClient:
 
             if result.get("success"):
                 tx_id = result.get("data", {}).get("transaction_id", "unknown")
-                logger.info(f"✅ Order confirmed (tx: {tx_id[:8]}...)")
+                logger.debug(f"✅ Order confirmed (tx: {tx_id[:8]}...)")
                 
                 # Log detailed response at DEBUG level
                 logger.debug(f"Full transaction response: {result}")
@@ -277,12 +277,9 @@ class DexClient:
 
     def fetch_order_book(self, quote_symbol: str, base_symbol: str) -> dict:
         """Fetch the complete order book for a trading pair."""
+        logger = logging.getLogger("pylibre.DexClient")
         try:
             pair = f"{base_symbol.lower()}{quote_symbol.lower()}"
-            
-            if self.client.verbose:
-                print(f"Fetching order book for {base_symbol}/{quote_symbol}...")
-                print(f"Fetching rows... (found 0 so far)")
             
             all_rows = []
             more = True
@@ -298,15 +295,11 @@ class DexClient:
                 )
                 
                 if not response.get("success", False):
-                    if self.client.verbose:
-                        print(f"❌ Error fetching order book: {response.get('error', 'Unknown error')}")
+                    logger.error(f"Error fetching order book: {response.get('error', 'Unknown error')}")
                     return {"bids": [], "offers": []}
                 
                 rows = response.get("rows", [])
                 all_rows.extend(rows)
-                
-                if self.client.verbose:
-                    print(f"Fetching rows... (found {len(all_rows)} so far)")
                 
                 more = response.get("more", False)
                 if more and len(rows) > 0:
@@ -314,9 +307,6 @@ class DexClient:
                     last_key = str(rows[-1].get("identifier", ""))
                 else:
                     more = False
-            
-            if self.client.verbose:
-                print(f"Fetched {len(all_rows)} rows total")
             
             # Parse the rows into bids and offers
             bids = []
@@ -340,7 +330,7 @@ class DexClient:
                         offers.append(order)
                 except (KeyError, ValueError, IndexError) as e:
                     if self.client.verbose:
-                        print(f"Warning: Skipping malformed order: {row}")
+                        logger.error(f"Warning: Skipping malformed order: {row}")
                     continue
             
             return {
@@ -350,7 +340,7 @@ class DexClient:
             
         except Exception as e:
             if self.client.verbose:
-                print(f"❌ Error in fetch_order_book: {str(e)}")
+                logger.error(f"❌ Error in fetch_order_book: {str(e)}")
             return {"bids": [], "offers": []}
 
     def cancel_order(self, account: str, order_id: int, quote_symbol: str, base_symbol: str) -> dict:
@@ -396,16 +386,17 @@ class DexClient:
         Returns:
             dict: Summary of cancellation results
         """
-        print(f"\n🔍 Fetching order book for {base_symbol}/{quote_symbol}...")
+        logger = logging.getLogger("pylibre.DexClient")
+        logger.info(f"Fetching order book for {base_symbol}/{quote_symbol}...")
         order_book = self.fetch_order_book(quote_symbol=quote_symbol, base_symbol=base_symbol)
 
         results = []
         
         # Cancel all bids
-        print("\nProcessing BIDS:")
+        logger.info("Processing BIDS:")
         for bid in order_book["bids"]:
             if bid["account"] == account:
-                print(f"🚫 Cancelling bid order with identifier: {bid['identifier']}")
+                logger.info(f"Cancelling bid order with identifier: {bid['identifier']}")
                 try:
                     cancel_result = self.cancel_order(
                         account=account,
@@ -421,9 +412,12 @@ class DexClient:
                         "success": success,
                         "error": cancel_result.get("error") if not success else None
                     })
-                    print("✅ Bid cancelled" if success else f"❌ Failed to cancel bid: {cancel_result.get('error')}")
+                    if success:
+                        logger.info("Bid cancelled")
+                    else:
+                        logger.error(f"Failed to cancel bid: {cancel_result.get('error')}")
                 except Exception as e:
-                    print(f"❌ Error cancelling bid: {str(e)}")
+                    logger.error(f"Error cancelling bid: {str(e)}")
                     results.append({
                         "order_id": bid['identifier'],
                         "type": "bid",
@@ -433,10 +427,10 @@ class DexClient:
                     })
 
         # Cancel all offers
-        print("\nProcessing OFFERS:")
+        logger.info("Processing OFFERS:")
         for offer in order_book["offers"]:
             if offer["account"] == account:
-                print(f"🚫 Cancelling sell order with identifier: {offer['identifier']}")
+                logger.info(f"Cancelling sell order with identifier: {offer['identifier']}")
                 try:
                     cancel_result = self.cancel_order(
                         account=account,
@@ -452,9 +446,12 @@ class DexClient:
                         "success": success,
                         "error": cancel_result.get("error") if not success else None
                     })
-                    print("✅ Offer cancelled" if success else f"❌ Failed to cancel offer: {cancel_result.get('error')}")
+                    if success:
+                        logger.info("Offer cancelled")
+                    else:
+                        logger.error(f"Failed to cancel offer: {cancel_result.get('error')}")
                 except Exception as e:
-                    print(f"❌ Error cancelling offer: {str(e)}")
+                    logger.error(f"Error cancelling offer: {str(e)}")
                     results.append({
                         "order_id": offer['identifier'],
                         "type": "offer",
@@ -476,12 +473,12 @@ class DexClient:
             "details": results
         }
         
-        print(f"\n📊 Summary: {summary['summary']}")
+        logger.info(f"Summary: {summary['summary']}")
         if failed > 0:
-            print("\nFailed orders:")
+            logger.warning("Failed orders:")
             for result in results:
                 if not result["success"]:
-                    print(f"- Order {result['order_id']} ({result['type']}): {result['error']}")
+                    logger.warning(f"- Order {result['order_id']} ({result['type']}): {result['error']}")
         
         return summary
 
@@ -494,10 +491,8 @@ class DexClient:
         Returns:
             list: List of balance objects with symbol and amount
         """
+        logger = logging.getLogger("pylibre.DexClient")
         try:
-            if self.client.verbose:
-                print(f"Fetching balances for account {account}...")
-            
             # Define token contracts to check
             token_contracts = [
                 {"symbol": "LIBRE", "contract": "eosio.token"},
@@ -527,17 +522,10 @@ class DexClient:
                                 "amount": amount
                             })
                 except Exception as e:
-                    if self.client.verbose:
-                        print(f"Warning: Could not get balance for {token['symbol']}: {e}")
-            
-            if self.client.verbose:
-                print(f"Found {len(balances)} token balances for {account}")
-                for balance in balances:
-                    print(f"  {balance['amount']} {balance['symbol']}")
+                    logger.warning(f"Could not get balance for {token['symbol']}: {e}")
             
             return balances
             
         except Exception as e:
-            if self.client.verbose:
-                print(f"❌ Error in get_account_balances: {str(e)}")
+            logger.error(f"Error in get_account_balances: {str(e)}")
             return []
