@@ -19,12 +19,16 @@ trading_pairs:
       activity_level: "medium"  # low, medium, high
       orders_per_cycle: 3  # number of orders to update each cycle
       cycle_interval_ms: 5000  # 5 seconds
+      max_active_orders: 20  # maximum number of active orders allowed
+      max_orders_per_side: 10  # maximum orders per side (buy/sell)
+      cleanup_frequency: 10  # clean up excess orders every 10 cycles
     
     price_tracker:
       enabled: true
-      price_source: "binance"  # Fixed the key name from 'source' to 'price_source'
-      update_interval_ms: 30000  # 30 seconds
+      price_source: "binance"  # Use Binance as the price source
+      update_interval_ms: 60000  # 1 minute - increased from 30 seconds
       price_change_threshold: 0.005  # 0.5%
+      fallback_price: 84273.28  # Current BTC price as of check
       
     simulator:
       enabled: true
@@ -49,6 +53,9 @@ trading_pairs:
       activity_level: "high"
       orders_per_cycle: 5
       cycle_interval_ms: 3000  # 3 seconds
+      max_active_orders: 20  # maximum number of active orders allowed
+      max_orders_per_side: 10  # maximum orders per side (buy/sell)
+      cleanup_frequency: 10  # clean up excess orders every 10 cycles
     
     price_tracker:
       enabled: true
@@ -87,6 +94,9 @@ strategies:
     activity_level: "medium"
     orders_per_cycle: 3
     cycle_interval_ms: 5000
+    max_active_orders: 20  # maximum number of active orders allowed
+    max_orders_per_side: 10  # maximum orders per side (buy/sell)
+    cleanup_frequency: 10  # clean up excess orders every 10 cycles
     
   TradeSimulatorStrategy:
     # Default parameters for TradeSimulatorStrategy

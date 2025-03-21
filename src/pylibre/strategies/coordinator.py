@@ -702,22 +702,49 @@ class StrategyCoordinator:
             self.logger.warning("Status monitor thread is not running")
     
     def _status_monitor_loop(self, interval_seconds):
-        """Background loop to periodically print status updates."""
-        last_print = time.time()
-        
+        """Background thread that periodically prints status updates."""
         while self.running and self.status_monitor_running:
-            # Check if it's time to print status
-            current_time = time.time()
-            if current_time - last_print >= interval_seconds:
-                # Use the new detailed status report instead of the summary
-                self.print_status_report()
-                last_print = current_time
+            try:
+                time.sleep(interval_seconds)
+                self._print_status_summary()
                 
-                # Also check for any stalled strategies
-                self._check_for_stalled_strategies()
+                # Log a concise status summary
+                total_cycles = sum(status.get("cycles_completed", 0) for status in self.strategy_statuses.values())
+                runtime = time.time() - self.start_time
+                hours, remainder = divmod(runtime, 3600)
+                minutes, seconds = divmod(remainder, 60)
                 
-            # Sleep for a short time to avoid busy waiting
-            time.sleep(5)
+                # Calculate orders stats from monitor
+                active_strategies = sum(1 for status in self.strategy_statuses.values() if status.get("status") == "running")
+                
+                # Get order counts if available
+                try:
+                    open_orders = 0
+                    filled_orders = 0
+                    
+                    for strategy_type, strategy in self.strategies.items():
+                        if hasattr(strategy, 'get_open_orders_count'):
+                            open_orders += strategy.get_open_orders_count()
+                        
+                        # Check metrics for filled orders
+                        strategy_id = f"{strategy_type}_{self.account}_{self.base_symbol}_{self.quote_symbol}"
+                        if strategy_id in self.monitor.metrics:
+                            filled_orders += self.monitor.metrics[strategy_id].get('orders_filled', 0)
+                except Exception as e:
+                    self.logger.warning(f"Error getting order counts: {e}")
+                    open_orders = "Unknown"
+                    filled_orders = "Unknown"
+                
+                self.logger.info(
+                    f"Status: Running {active_strategies}/{len(self.strategies)} strategies | "
+                    f"Uptime: {int(hours)}h {int(minutes)}m {int(seconds)}s | "
+                    f"Cycles: {total_cycles} | "
+                    f"Orders: {open_orders} open, {filled_orders} filled"
+                )
+            except Exception as e:
+                self.logger.error(f"Error in status monitor: {e}")
+                import traceback
+                self.logger.debug(f"Status monitor error details: {traceback.format_exc()}")
     
     def _check_for_stalled_strategies(self):
         """Check for strategies that haven't updated their status recently."""

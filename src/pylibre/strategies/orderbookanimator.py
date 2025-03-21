@@ -23,6 +23,13 @@ class OrderBookAnimatorStrategy(BaseStrategy):
         self.price_variation_percentage = parameters.get('price_variation_percentage', None)
         self.quantity_variation_percentage = parameters.get('quantity_variation_percentage', None)
         
+        # New order management parameters
+        self.max_active_orders = parameters.get('max_active_orders', 20)  # Default maximum of 20 active orders
+        self.max_orders_per_side = self.max_active_orders // 2  # Default to equal distribution per side
+        self.cleanup_frequency = parameters.get('cleanup_frequency', 10)  # Clean up every 10 cycles
+        self.active_orders = {'buy': [], 'sell': []}  # Track our active orders
+        self.cycle_count = 0  # Track cycles for periodic cleanup
+        
         # Activity level determines the intensity of changes if not explicitly set
         self.activity_factors = {
             'low': {'price': '0.001', 'quantity': '0.05'},    # 0.1% price, 5% quantity
@@ -50,6 +57,8 @@ class OrderBookAnimatorStrategy(BaseStrategy):
         self.logger.info(f"  Cycle interval: {self.cycle_interval_ms}ms")
         self.logger.info(f"  Price variation: {float(self.price_variation_percentage)*100}%")
         self.logger.info(f"  Quantity variation: {float(self.quantity_variation_percentage)*100}%")
+        self.logger.info(f"  Maximum active orders: {self.max_active_orders} ({self.max_orders_per_side} per side)")
+        self.logger.info(f"  Cleanup frequency: every {self.cleanup_frequency} cycles")
         
     def _filter_our_orders(self, order_book: Dict[str, List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
         """Filter orders belonging to our account."""
@@ -132,6 +141,170 @@ class OrderBookAnimatorStrategy(BaseStrategy):
             return Decimal(parts[0]), parts[1]
         return Decimal('0'), ""
         
+    def animate_orderbook(self):
+        """Create movement in the orderbook."""
+        try:
+            # Increment cycle count
+            self.cycle_count += 1
+            
+            # 1. Fetch current orderbook
+            order_book = self.dex.fetch_order_book(
+                quote_symbol=self.quote_symbol,
+                base_symbol=self.base_symbol
+            )
+            
+            # 2. Filter orders belonging to our account
+            our_orders = self._filter_our_orders(order_book)
+            
+            # Update our active orders tracking
+            buy_orders = [order for order in our_orders if order.get("order_type") == "buy"]
+            sell_orders = [order for order in our_orders if order.get("order_type") == "sell"]
+            self.active_orders = {'buy': buy_orders, 'sell': sell_orders}
+            
+            # Log the current order counts
+            self.logger.info(f"Current active orders: {len(our_orders)} total ({len(buy_orders)} buy, {len(sell_orders)} sell)")
+            
+            if not our_orders:
+                self.logger.info(f"No orders found for account {self.account}")
+                return 0
+                
+            # Run periodic cleanup if needed
+            orders_cleaned = 0
+            if self.cycle_count % self.cleanup_frequency == 0:
+                orders_cleaned = self._clean_excess_orders()
+                if orders_cleaned > 0:
+                    self.logger.info(f"Cleaned up {orders_cleaned} excess orders")
+                    
+                    # Refetch order book after cleanup
+                    order_book = self.dex.fetch_order_book(
+                        quote_symbol=self.quote_symbol,
+                        base_symbol=self.base_symbol
+                    )
+                    our_orders = self._filter_our_orders(order_book)
+                    buy_orders = [order for order in our_orders if order.get("order_type") == "buy"]
+                    sell_orders = [order for order in our_orders if order.get("order_type") == "sell"]
+                    self.active_orders = {'buy': buy_orders, 'sell': sell_orders}
+            
+            # 3. Determine if we need to add new orders or just animate existing ones
+            # Check how many orders to animate based on our maximum limits
+            max_orders_to_animate = self.orders_per_cycle
+            
+            # Reduce animation if we're already at or near the max order limit
+            if len(our_orders) >= self.max_active_orders * 0.9:  # If we're at 90% capacity or higher
+                max_orders_to_animate = min(2, max_orders_to_animate)  # Reduce to at most 2 orders
+                self.logger.info(f"Near maximum order limit, reducing animation to {max_orders_to_animate} orders")
+                
+            # 4. Select orders to cancel based on activity pattern and limits
+            orders_to_cancel = self._select_orders_to_animate(our_orders)
+            
+            # Limit the number based on our determined maximum
+            if len(orders_to_cancel) > max_orders_to_animate:
+                orders_to_cancel = orders_to_cancel[:max_orders_to_animate]
+            
+            if not orders_to_cancel:
+                self.logger.info(f"No orders selected for animation")
+                return 0
+                
+            self.logger.info(f"Selected {len(orders_to_cancel)} orders for animation")
+            
+            # Count of successfully updated orders
+            orders_updated = 0
+            
+            # 5. Cancel selected orders and create replacements
+            for order in orders_to_cancel:
+                try:
+                    # Skip if adding this would exceed our maximum per side
+                    order_type = order.get('order_type')
+                    if (order_type == 'buy' and len(self.active_orders['buy']) >= self.max_orders_per_side) or \
+                       (order_type == 'sell' and len(self.active_orders['sell']) >= self.max_orders_per_side):
+                        self.logger.info(f"Skipping {order_type} order animation - maximum {order_type} orders reached")
+                        continue
+                    
+                    # Cancel the order
+                    cancel_result = self.dex.cancel_order(
+                        account=self.account,
+                        order_id=order['identifier'],
+                        quote_symbol=self.quote_symbol,
+                        base_symbol=self.base_symbol
+                    )
+                    
+                    if cancel_result:
+                        self.logger.info(f"Cancelled {order.get('order_type')} order at price {order.get('price')}")
+                        
+                        # Update our active orders list
+                        if order_type == 'buy':
+                            self.active_orders['buy'] = [o for o in self.active_orders['buy'] 
+                                                       if o['identifier'] != order['identifier']]
+                        else:
+                            self.active_orders['sell'] = [o for o in self.active_orders['sell'] 
+                                                        if o['identifier'] != order['identifier']]
+                        
+                        # 6. Create replacement order with slight variation
+                        # Add a small delay to avoid rate limiting and make it look more natural
+                        time.sleep(0.5)
+                        if self._create_replacement_order(order):
+                            orders_updated += 1
+                    
+                except Exception as e:
+                    self.logger.error(f"Error cancelling order {order.get('identifier')}: {e}")
+                    
+            # 7. Log final order counts after all operations
+            self.logger.info(f"Cycle {self.cycle_count} summary: {orders_updated} orders updated")
+            
+            return orders_updated
+                    
+        except Exception as e:
+            self.logger.error(f"Error animating orderbook: {e}")
+            return 0
+            
+    def _clean_excess_orders(self):
+        """Cancel oldest orders when we exceed our maximum limits."""
+        try:
+            # Calculate how many orders to cancel for each side
+            buy_excess = max(0, len(self.active_orders['buy']) - self.max_orders_per_side)
+            sell_excess = max(0, len(self.active_orders['sell']) - self.max_orders_per_side)
+            
+            if buy_excess + sell_excess == 0:
+                return 0  # No excess orders
+                
+            self.logger.info(f"Found excess orders: {buy_excess} buy, {sell_excess} sell")
+            
+            # Sort orders by age (oldest first)
+            # Assuming older orders have lower identifier values - modify if this isn't true
+            buy_orders = sorted(self.active_orders['buy'], key=lambda x: x['identifier'])
+            sell_orders = sorted(self.active_orders['sell'], key=lambda x: x['identifier'])
+            
+            # Select oldest orders to cancel
+            orders_to_cancel = []
+            if buy_excess > 0:
+                orders_to_cancel.extend(buy_orders[:buy_excess])
+            if sell_excess > 0:
+                orders_to_cancel.extend(sell_orders[:sell_excess])
+                
+            # Cancel the orders
+            cancelled_count = 0
+            for order in orders_to_cancel:
+                try:
+                    cancel_result = self.dex.cancel_order(
+                        account=self.account,
+                        order_id=order['identifier'],
+                        quote_symbol=self.quote_symbol,
+                        base_symbol=self.base_symbol
+                    )
+                    
+                    if cancel_result:
+                        self.logger.info(f"Cleaned up excess {order.get('order_type')} order at price {order.get('price')}")
+                        cancelled_count += 1
+                        
+                except Exception as e:
+                    self.logger.error(f"Error cancelling excess order {order.get('identifier')}: {e}")
+                    
+            return cancelled_count
+            
+        except Exception as e:
+            self.logger.error(f"Error cleaning up excess orders: {e}")
+            return 0
+
     def _create_replacement_order(self, order: Dict[str, Any]) -> bool:
         """Create a replacement order with slight variation."""
         try:
@@ -212,11 +385,35 @@ class OrderBookAnimatorStrategy(BaseStrategy):
             )
             
             # Handle both dictionary and string responses
+            success = False
+            order_id = None
+            
             if isinstance(result, dict) and result.get("success"):
-                self.logger.info(f"Replaced {order_type} order: {quantity_str} {self.base_symbol} at {price_str} {self.quote_symbol}")
-                return True
+                success = True
+                order_id = result.get("order_id") or result.get("data", {}).get("transaction_id")
             elif isinstance(result, str):  # Transaction ID as string indicates success
+                success = True
+                order_id = result
+                
+            if success:
                 self.logger.info(f"Replaced {order_type} order: {quantity_str} {self.base_symbol} at {price_str} {self.quote_symbol}")
+                
+                # Add to active orders
+                if order_id:
+                    new_order = {
+                        'identifier': order_id,
+                        'order_type': order_type,
+                        'price': str(new_price),
+                        'baseAsset': f"{new_base_amount} {self.base_symbol}",
+                        'quoteAsset': f"{new_base_amount * new_price} {self.quote_symbol}",
+                        'account': self.account
+                    }
+                    
+                    if order_type == 'buy':
+                        self.active_orders['buy'].append(new_order)
+                    else:
+                        self.active_orders['sell'].append(new_order)
+                        
                 return True
             else:
                 error = result.get('error', 'Unknown error') if isinstance(result, dict) else "Unknown error"
@@ -226,55 +423,7 @@ class OrderBookAnimatorStrategy(BaseStrategy):
         except Exception as e:
             self.logger.error(f"Error creating replacement order: {e}")
             return False
-            
-    def animate_orderbook(self):
-        """Create movement in the orderbook."""
-        try:
-            # 1. Fetch current orderbook
-            order_book = self.dex.fetch_order_book(
-                quote_symbol=self.quote_symbol,
-                base_symbol=self.base_symbol
-            )
-            
-            # 2. Filter orders belonging to our account
-            our_orders = self._filter_our_orders(order_book)
-            
-            if not our_orders:
-                self.logger.info(f"No orders found for account {self.account}")
-                return
-                
-            # 3. Select orders to cancel based on activity pattern
-            orders_to_cancel = self._select_orders_to_animate(our_orders)
-            
-            if not orders_to_cancel:
-                self.logger.info(f"No orders selected for animation")
-                return
-                
-            self.logger.info(f"Selected {len(orders_to_cancel)} orders for animation")
-            
-            # 4. Cancel selected orders
-            for order in orders_to_cancel:
-                try:
-                    self.dex.cancel_order(
-                        account=self.account,
-                        order_id=order['identifier'],
-                        quote_symbol=self.quote_symbol,
-                        base_symbol=self.base_symbol
-                    )
-                    
-                    self.logger.info(f"Cancelled {order.get('order_type')} order at price {order.get('price')}")
-                    
-                    # 5. Create replacement order with slight variation
-                    # Add a small delay to avoid rate limiting and make it look more natural
-                    time.sleep(0.5)
-                    self._create_replacement_order(order)
-                    
-                except Exception as e:
-                    self.logger.error(f"Error cancelling order {order.get('identifier')}: {e}")
-                    
-        except Exception as e:
-            self.logger.error(f"Error animating orderbook: {e}")
-            
+
     def run(self):
         """Main execution loop."""
         self.running = True

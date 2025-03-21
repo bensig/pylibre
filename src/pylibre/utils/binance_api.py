@@ -94,11 +94,13 @@ def get_ipinfo_token():
         print(f"Error loading IPInfo token: {e}")
         return None
 
-def fetch_btc_usdt_price(bypass_ip_check=True):
+def fetch_btc_usdt_price(bypass_ip_check=True, max_retries=3, retry_delay=2):
     """Fetch the latest BTC/USDT price from Binance.
     
     Args:
         bypass_ip_check (bool): If True, skip the IP location check (useful when using VPN)
+        max_retries (int): Maximum number of retry attempts per endpoint
+        retry_delay (int): Delay in seconds between retries
         
     Returns:
         float or None: Current BTC/USDT price or None if unavailable
@@ -111,47 +113,136 @@ def fetch_btc_usdt_price(bypass_ip_check=True):
         elif ip_check is True:
             print("Warning: US IP detected, but proceeding anyway since bypass is enabled")
     
-    # Try multiple Binance endpoints in case one fails
+    # Try multiple endpoints in case one fails
     endpoints = [
         # Standard Binance API
         f"{BINANCE_BASE_URL}/api/v3/ticker/price?symbol=BTCUSDT",
         # Binance API v3 alternative endpoint
         f"{BINANCE_BASE_URL}/api/v3/avgPrice?symbol=BTCUSDT",
         # Fallback to Binance US if needed
-        "https://api.binance.us/api/v3/ticker/price?symbol=BTCUSDT"
+        "https://api.binance.us/api/v3/ticker/price?symbol=BTCUSDT",
+        # CoinGecko API as fallback
+        "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd",
+        # CoinAPI as a final fallback
+        "https://rest.coinapi.io/v1/exchangerate/BTC/USD"
     ]
     
-    last_error = None
+    # Record all attempts for diagnostic purposes
+    attempts_log = []
+    
+    # Try each endpoint
     for endpoint in endpoints:
-        try:
-            print(f"Attempting to fetch BTC/USDT price from: {endpoint}")
-            response = requests.get(endpoint, timeout=10)  # Add timeout for better reliability
-            response.raise_for_status()
-            data = response.json()
-            
-            # Different endpoints return different JSON structures
-            if "price" in data:
-                price = float(data["price"])
-            elif "avgPrice" in data:
-                price = float(data["avgPrice"])
-            else:
-                print(f"Warning: Unexpected response format: {data}")
+        endpoint_name = endpoint.split("/")[2]  # Extract domain name
+        
+        # Special case for CoinAPI which requires an API key
+        if "coinapi.io" in endpoint:
+            api_key = get_coinapi_key()
+            if not api_key:
+                attempts_log.append(f"{endpoint_name}: Skipped (No API key)")
+                continue
+            headers = {"X-CoinAPI-Key": api_key}
+        else:
+            headers = {}
+        
+        # Try multiple times for each endpoint
+        for attempt in range(1, max_retries + 1):
+            try:
+                print(f"Fetching BTC/USDT price from {endpoint_name} (attempt {attempt}/{max_retries})")
+                
+                # Set a reasonable timeout
+                response = requests.get(endpoint, headers=headers, timeout=5)
+                response.raise_for_status()
+                data = response.json()
+                
+                # Parse response based on the API format
+                price = None
+                if "binance.com" in endpoint or "binance.us" in endpoint:
+                    if "price" in data:
+                        price = float(data["price"])
+                    elif "avgPrice" in data:
+                        price = float(data["avgPrice"])
+                elif "coingecko.com" in endpoint:
+                    if "bitcoin" in data and "usd" in data["bitcoin"]:
+                        price = float(data["bitcoin"]["usd"])
+                elif "coinapi.io" in endpoint:
+                    if "rate" in data:
+                        price = float(data["rate"])
+                
+                if price is not None and price > 0:
+                    print(f"Successfully fetched BTC/USDT price from {endpoint_name}: ${price:,.2f}")
+                    return price
+                else:
+                    attempts_log.append(f"{endpoint_name} attempt {attempt}: Invalid price format: {data}")
+                    break  # Try next endpoint if format is wrong
+                
+            except requests.exceptions.Timeout:
+                attempts_log.append(f"{endpoint_name} attempt {attempt}: Timeout")
+                # Retry this endpoint after delay
+                time.sleep(retry_delay)
                 continue
                 
-            print(f"Successfully fetched BTC/USDT price: ${price:,.2f}")
-            return price
-        except Exception as e:
-            last_error = e
-            print(f"Error fetching from {endpoint}: {e}")
-            continue
+            except requests.exceptions.ConnectionError:
+                attempts_log.append(f"{endpoint_name} attempt {attempt}: Connection Error")
+                # Possible network issue, wait a bit longer
+                time.sleep(retry_delay * 2)
+                continue
+                
+            except Exception as e:
+                attempts_log.append(f"{endpoint_name} attempt {attempt}: {str(e)}")
+                # Wait before trying next attempt
+                time.sleep(retry_delay)
+                continue
     
-    # If all endpoints failed
-    print(f"Error: All Binance endpoints failed. Last error: {last_error}")
+    # If we get here, all endpoints and retries failed
+    print("ERROR: All price fetching attempts failed:")
+    for attempt in attempts_log:
+        print(f"  - {attempt}")
+    print("Unable to fetch current BTC price - please check your internet connection")
     
-    # Fallback to a hardcoded recent price if all else fails
-    fallback_price = 50000.0  # Approximate recent BTC price
-    print(f"Using fallback price: ${fallback_price:,.2f}")
-    return fallback_price
+    # Try to load cached price from disk
+    cached_price = load_cached_price()
+    if cached_price:
+        print(f"Using cached price from disk: ${cached_price:,.2f}")
+        return cached_price
+        
+    # Don't return a fallback price by default - returning None indicates a failure
+    # that should be handled by calling code
+    return None
+
+def get_coinapi_key():
+    """Load CoinAPI key from config.yaml"""
+    try:
+        if not CREDENTIALS_PATH.exists():
+            return None
+            
+        with open(CREDENTIALS_PATH) as f:
+            config = yaml.safe_load(f)
+            
+        return config.get("credentials", {}).get("coinapi", {}).get("api_key")
+    except Exception:
+        return None
+        
+def load_cached_price():
+    """Load the most recent BTC price from disk cache"""
+    try:
+        cache_file = Path("shared_data/btcusdt_price.json")
+        if not cache_file.exists():
+            return None
+            
+        # Check if the cache is too old (more than 24 hours)
+        if time.time() - cache_file.stat().st_mtime > 86400:
+            print("Cached price is more than 24 hours old, not using")
+            return None
+            
+        with open(cache_file, "r") as f:
+            data = json.load(f)
+            
+        if isinstance(data, dict) and "price" in data:
+            return float(data["price"])
+        return None
+    except Exception as e:
+        print(f"Error loading cached price: {e}")
+        return None
 
 if __name__ == "__main__":
     # Test the price fetching

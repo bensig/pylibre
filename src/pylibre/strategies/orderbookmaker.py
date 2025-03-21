@@ -78,7 +78,7 @@ class OrderBookMakerStrategy(BaseStrategy):
         if price is None or price == Decimal('0'):
             # Default prices for common trading pairs
             if self.base_symbol == 'BTC' and self.quote_symbol == 'USDT':
-                price = Decimal('50000')
+                price = Decimal('84273.28')  # Updated to current BTC price
             elif self.base_symbol == 'LIBRE' and self.quote_symbol == 'BTC':
                 # Try to get the price from the price tracker's fallback price
                 fallback_price = self.parameters.get('fallback_price')
@@ -129,7 +129,7 @@ class OrderBookMakerStrategy(BaseStrategy):
         min_price = center_price * (Decimal('1') + self.min_spread_percentage)
         max_price = center_price * (Decimal('1') + self.max_spread_percentage)
         
-        self.logger.info(f"Sell price range: {min_price} to {max_price} {self.quote_symbol}")
+        self.logger.debug(f"Sell price range: {min_price} to {max_price} {self.quote_symbol}")
         
         # Generate prices based on spacing method
         if self.order_spacing == 'linear':
@@ -165,7 +165,7 @@ class OrderBookMakerStrategy(BaseStrategy):
         min_price = center_price * (Decimal('1') - self.max_spread_percentage)
         max_price = center_price * (Decimal('1') - self.min_spread_percentage)
         
-        self.logger.info(f"Buy price range: {min_price} to {max_price} {self.quote_symbol}")
+        self.logger.debug(f"Buy price range: {min_price} to {max_price} {self.quote_symbol}")
         
         # Generate prices based on spacing method
         if self.order_spacing == 'linear':
@@ -332,13 +332,114 @@ class OrderBookMakerStrategy(BaseStrategy):
         
         return sell_success_count > 0 or buy_success_count > 0 
 
-    def run(self, cancel_existing=True):
+    def check_and_cancel_outdated_orders(self):
+        """
+        Check the orderbook for existing orders that are too far from the current market price and cancel them.
+        This should be run before placing new orders to clean up any stale orders.
+        
+        Returns:
+            tuple: A tuple containing (total_orders_found, outdated_orders_cancelled)
+        """
+        try:
+            # Get current market price
+            market_price = self.get_market_price()
+            if market_price is None or market_price == Decimal('0'):
+                self.logger.warning("Cannot check for outdated orders: No market price available")
+                return 0, 0
+            
+            # Set threshold percentage (orders beyond this % from market price are considered outdated)
+            # This should be slightly larger than our max spread to allow for normal spread orders
+            price_threshold = self.max_spread_percentage * Decimal('1.5')
+            
+            # Log threshold
+            self.logger.info(f"Checking for orders more than {float(price_threshold)*100:.2f}% away from current price {market_price}")
+            
+            # Fetch current orderbook
+            order_book = self.dex.fetch_order_book(
+                quote_symbol=self.quote_symbol,
+                base_symbol=self.base_symbol
+            )
+            
+            # Track our counts
+            total_orders = 0
+            outdated_orders = 0
+            
+            # Check bids (buy orders)
+            for bid in order_book["bids"]:
+                if bid["account"] == self.account:
+                    total_orders += 1
+                    bid_price = Decimal(str(bid["price"]))
+                    # Calculate how far this order is from market price (percentage)
+                    price_deviation = abs(bid_price - market_price) / market_price
+                    
+                    # If it's too far, cancel it
+                    if price_deviation > price_threshold:
+                        self.logger.info(f"Cancelling outdated BUY order at {bid_price} ({float(price_deviation)*100:.2f}% from market price)")
+                        try:
+                            self.dex.cancel_order(
+                                account=self.account,
+                                order_id=bid['identifier'],
+                                quote_symbol=self.quote_symbol,
+                                base_symbol=self.base_symbol
+                            )
+                            outdated_orders += 1
+                        except Exception as e:
+                            self.logger.error(f"Error cancelling outdated buy order: {e}")
+            
+            # Check offers (sell orders)
+            for offer in order_book["offers"]:
+                if offer["account"] == self.account:
+                    total_orders += 1
+                    offer_price = Decimal(str(offer["price"]))
+                    # Calculate how far this order is from market price (percentage)
+                    price_deviation = abs(offer_price - market_price) / market_price
+                    
+                    # If it's too far, cancel it
+                    if price_deviation > price_threshold:
+                        self.logger.info(f"Cancelling outdated SELL order at {offer_price} ({float(price_deviation)*100:.2f}% from market price)")
+                        try:
+                            self.dex.cancel_order(
+                                account=self.account,
+                                order_id=offer['identifier'],
+                                quote_symbol=self.quote_symbol,
+                                base_symbol=self.base_symbol
+                            )
+                            outdated_orders += 1
+                        except Exception as e:
+                            self.logger.error(f"Error cancelling outdated sell order: {e}")
+            
+            # Log summary
+            if outdated_orders > 0:
+                self.logger.info(f"Cancelled {outdated_orders} outdated orders out of {total_orders} total orders")
+            else:
+                self.logger.info(f"No outdated orders found among {total_orders} total orders")
+            
+            return total_orders, outdated_orders
+        
+        except Exception as e:
+            self.logger.error(f"Error checking for outdated orders: {e}")
+            import traceback
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
+            return 0, 0
+
+    def run(self, cancel_existing=None):
         """Run the strategy"""
         # Check balances first
         base_balance, quote_balance = self.check_balances()
         
-        # Cancel existing orders if requested
-        if cancel_existing:
+        # Determine cancel behavior - parameter overrides config
+        if cancel_existing is None:
+            # Use configuration if parameter not provided
+            cancel_existing = self.parameters.get('cancel_existing', True)
+        
+        # Check for outdated orders and cancel them first
+        if not cancel_existing:
+            self.logger.info("Checking for outdated orders before running strategy")
+            total_orders, cancelled_orders = self.check_and_cancel_outdated_orders()
+            self.logger.info(f"Found {total_orders} active orders, cancelled {cancelled_orders} outdated ones")
+        else:
+            # Cancel all existing orders if requested
+            self.logger.info("Cancelling all existing orders as requested")
             self.cancel_orders()
         
         # Generate signal
@@ -353,19 +454,60 @@ class OrderBookMakerStrategy(BaseStrategy):
     def check_balances(self):
         """Check account balances"""
         try:
+            # For dry run mode, use simulated high balances
+            if self.parameters.get('dry_run', False):
+                # Use high values to ensure all orders can be placed in simulation
+                base_balance = Decimal('1')  # 1 BTC or other base asset
+                quote_balance = Decimal('100000')  # 100,000 USDT or other quote asset
+                self.logger.info(f"Using simulated balances for dry run: {base_balance} {self.base_symbol}, {quote_balance} {self.quote_symbol}")
+                return base_balance, quote_balance
+            
             # Get base balance
-            base_balance_str = self.client.get_currency_balance(self.account, self.base_symbol)
-            base_balance = Decimal(base_balance_str.split()[0]) if base_balance_str else Decimal('0')
+            base_balance_result = self.client.get_currency_balance(self.account, self.base_symbol)
+            base_balance = Decimal('0')
+            
+            # Handle different return types from get_currency_balance
+            if isinstance(base_balance_result, str) and ' ' in base_balance_result:
+                base_balance = Decimal(base_balance_result.split()[0])
+            elif isinstance(base_balance_result, dict) and 'balance' in base_balance_result:
+                # Handle dict return format
+                balance_str = base_balance_result.get('balance', '0')
+                if isinstance(balance_str, str) and ' ' in balance_str:
+                    base_balance = Decimal(balance_str.split()[0])
+                else:
+                    base_balance = Decimal(str(balance_str))
+            elif base_balance_result:
+                # Try direct conversion as fallback
+                base_balance = Decimal(str(base_balance_result))
             
             # Get quote balance
-            quote_balance_str = self.client.get_currency_balance(self.account, self.quote_symbol)
-            quote_balance = Decimal(quote_balance_str.split()[0]) if quote_balance_str else Decimal('0')
+            quote_balance_result = self.client.get_currency_balance(self.account, self.quote_symbol)
+            quote_balance = Decimal('0')
+            
+            # Handle different return types from get_currency_balance
+            if isinstance(quote_balance_result, str) and ' ' in quote_balance_result:
+                quote_balance = Decimal(quote_balance_result.split()[0])
+            elif isinstance(quote_balance_result, dict) and 'balance' in quote_balance_result:
+                # Handle dict return format
+                balance_str = quote_balance_result.get('balance', '0')
+                if isinstance(balance_str, str) and ' ' in balance_str:
+                    quote_balance = Decimal(balance_str.split()[0])
+                else:
+                    quote_balance = Decimal(str(balance_str))
+            elif quote_balance_result:
+                # Try direct conversion as fallback
+                quote_balance = Decimal(str(quote_balance_result))
             
             self.logger.info(f"Account balances: {base_balance} {self.base_symbol}, {quote_balance} {self.quote_symbol}")
             
             return base_balance, quote_balance
         except Exception as e:
             self.logger.error(f"Error checking balances: {e}")
+            
+            # If error occurs, return minimum viable balances
+            if self.parameters.get('dry_run', False):
+                # Use high values for dry run mode
+                return Decimal('1'), Decimal('100000')
             return Decimal('0'), Decimal('0')
             
     def adjust_orders_for_balance(self, signal, base_balance, quote_balance):
@@ -455,39 +597,146 @@ class OrderBookMakerStrategy(BaseStrategy):
 
     def on_price_update(self, new_price):
         """Handle price updates from the MarketPriceTrackerStrategy."""
-        if new_price is None:
-            self.logger.warning("Received None price update")
-            return
-        
-        # Convert to Decimal if needed
-        if not isinstance(new_price, Decimal):
-            new_price = Decimal(str(new_price))
-        
-        # Check if the price change is significant
-        current_price = self.get_market_price()
-        if current_price is None:
-            self.logger.info(f"Updating center price from None to {new_price}")
-        else:
-            price_change_percentage = abs(new_price - current_price) / current_price
-            self.logger.info(f"Price update: {current_price} -> {new_price} ({float(price_change_percentage)*100:.2f}%)")
-        
-        # Store the new price
-        self._market_price = new_price
-        
-        # Regenerate orders if needed
-        # This could be controlled by a parameter
-        if self.parameters.get('auto_update_on_price_change', True):
-            self.logger.info("Regenerating orders due to price change")
+        try:
+            if new_price is None:
+                self.logger.warning("Received None price update, ignoring")
+                return
             
-            # Cancel existing orders
-            self.cancel_orders()
+            # Convert to Decimal if needed
+            if not isinstance(new_price, Decimal):
+                new_price = Decimal(str(new_price))
             
-            # Generate new signal
-            signal = self.generate_signal()
+            # Check if the price is reasonable (validation)
+            if new_price <= 0:
+                self.logger.warning(f"Ignoring invalid price update: {new_price}")
+                return
+                
+            # Check if the price change is significant
+            current_price = self.get_market_price()
+            if current_price is None or current_price == Decimal('0'):
+                self.logger.info(f"Setting initial center price to {new_price}")
+            else:
+                # Calculate price change percentage
+                price_change_percentage = abs(new_price - current_price) / current_price
+                change_pct = float(price_change_percentage) * 100
+                
+                # Only log at INFO level for significant changes
+                if change_pct >= 0.5:  # 0.5% threshold for INFO logging
+                    self.logger.info(f"Price update: {current_price} -> {new_price} ({change_pct:.2f}%)")
+                else:
+                    self.logger.debug(f"Minor price update: {current_price} -> {new_price} ({change_pct:.2f}%)")
+                
+                # Skip if change is too dramatic (safety check)
+                if change_pct > 20.0:  # 20% threshold
+                    self.logger.warning(f"⚠️ Dramatic price change detected ({change_pct:.2f}%), validating before applying")
+                    
+                    # Additional validation could be added here
+                    confirm_dramatic_change = self.parameters.get('confirm_dramatic_change', False)
+                    if not confirm_dramatic_change:
+                        self.logger.warning(f"Ignoring dramatic price change. Set 'confirm_dramatic_change: true' to allow.")
+                        return
+                    
+                    self.logger.warning(f"Proceeding with dramatic price change as configured")
             
-            # Check balances and adjust orders
-            base_balance, quote_balance = self.check_balances()
-            adjusted_signal = self.adjust_orders_for_balance(signal, base_balance, quote_balance)
+            # Store the new price
+            self._market_price = new_price
             
-            # Place new orders
-            self.place_orders(adjusted_signal) 
+            # Regenerate orders if needed based on config
+            if self.parameters.get('auto_update_on_price_change', True):
+                self.logger.debug("Regenerating orders due to price change")
+                
+                # Determine cancel behavior based on config
+                cancel_existing = self.parameters.get('cancel_existing_on_price_change', False)
+                
+                if cancel_existing:
+                    # Cancel all existing orders
+                    self.logger.info("Cancelling all existing orders due to price change")
+                    self.cancel_orders()
+                else:
+                    # Only cancel outdated orders
+                    self.logger.debug("Checking for outdated orders due to price change")
+                    total_orders, cancelled_orders = self.check_and_cancel_outdated_orders()
+                    
+                    # Only log at INFO level if we actually cancelled orders
+                    if cancelled_orders > 0:
+                        self.logger.info(f"Price update: Cancelled {cancelled_orders} outdated orders out of {total_orders} active orders")
+                
+                # Generate new signal with updated price
+                signal = self.generate_signal()
+                
+                # Check balances and adjust orders
+                base_balance, quote_balance = self.check_balances()
+                adjusted_signal = self.adjust_orders_for_balance(signal, base_balance, quote_balance)
+                
+                # Place new orders
+                self.place_orders(adjusted_signal)
+        except Exception as e:
+            self.logger.error(f"Error handling price update: {e}")
+            import traceback
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
+            # Continue running despite error
+
+    def _place_single_order(self, order_type, quantity, price, index=0):
+        """Place a single order with formatted parameters."""
+        try:
+            # Add randomness to price (within 0.01%) to avoid duplicates
+            if self.parameters.get('price_randomization', True):
+                random_factor = Decimal(str(0.9999 + random.random() * 0.0002))
+                price = price * random_factor
+                price = self.normalize_price(price)
+            
+            # Ensure quantity is properly formatted
+            if isinstance(quantity, str) and ' ' in quantity:
+                quantity_value = Decimal(quantity.split()[0])
+            else:
+                quantity_value = Decimal(str(quantity))
+            
+            # Calculate order total value
+            total_value = price * quantity_value
+            
+            # Debug log only for detailed order info
+            self.logger.debug(f"Order limits for {self.base_symbol}: min={self.min_base_value}, max={self.max_base_value}")
+            
+            # Place the order using the dex client (not the base client)
+            # Initialize dex client if not already done
+            if not hasattr(self, 'dex'):
+                from pylibre.dex import DexClient
+                self.dex = DexClient(self.client)
+            
+            # Use the dex client to place the order
+            result = self.dex.place_order(
+                account=self.account,
+                order_type=order_type,
+                quantity=quantity_value,
+                price=price,
+                quote_symbol=self.quote_symbol,
+                base_symbol=self.base_symbol
+            )
+            
+            # Log result - detailed info at INFO level
+            if result:
+                # For orders with tiny values, log at DEBUG level only to reduce noise
+                if total_value < self.min_quote_value * Decimal('2'):
+                    log_level = "debug"
+                else:
+                    log_level = "info"
+                    
+                # Log at the appropriate level
+                if order_type == 'sell':
+                    if log_level == "info":
+                        self.logger.info(f"💰 {self.account}: SELL {quantity_value} {self.base_symbol} at {price} {self.quote_symbol} (Total: {total_value} {self.quote_symbol})")
+                    else:
+                        self.logger.debug(f"💰 {self.account}: SELL {quantity_value} {self.base_symbol} at {price} {self.quote_symbol} (Total: {total_value} {self.quote_symbol})")
+                else:
+                    if log_level == "info":
+                        self.logger.info(f"💸 {self.account}: BUY {quantity_value} {self.base_symbol} at {price} {self.quote_symbol} (Total: {total_value} {self.quote_symbol})")
+                    else:
+                        self.logger.debug(f"💸 {self.account}: BUY {quantity_value} {self.base_symbol} at {price} {self.quote_symbol} (Total: {total_value} {self.quote_symbol})")
+                    
+                return True
+            else:
+                self.logger.warning(f"Failed to place {order_type.upper()} order: {quantity_value} {self.base_symbol} at {price} {self.quote_symbol}")
+                return False
+        except Exception as e:
+            self.logger.error(f"Error placing {order_type} order {index}: {e}")
+            return False 
