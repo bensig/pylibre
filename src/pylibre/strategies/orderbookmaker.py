@@ -105,6 +105,30 @@ class OrderBookMakerStrategy(BaseStrategy):
         """Generate trading signal with order prices and quantities"""
         center_price = self.get_market_price()
         
+        # Apply center_adjustment_factor if provided to adjust towards binance price
+        # This helps move the DEX price closer to external price sources
+        adjustment_factor = self.parameters.get('center_adjustment_factor')
+        if adjustment_factor is not None:
+            # Get external price if available
+            external_price = self.coordinator_market_price if hasattr(self, 'coordinator_market_price') else None
+            
+            # If we have both an external price and our center price differs, adjust it
+            if external_price is not None and external_price > Decimal('0'):
+                # Convert to decimal if needed
+                if not isinstance(external_price, Decimal):
+                    external_price = Decimal(str(external_price))
+                
+                # Calculate the difference and apply adjustment factor
+                if external_price != center_price and adjustment_factor > 0:
+                    adjustment_factor = Decimal(str(adjustment_factor))
+                    price_diff = external_price - center_price
+                    adjusted_price = center_price + (price_diff * adjustment_factor)
+                    
+                    self.logger.info(f"Adjusting center price: {center_price} -> {adjusted_price} " +
+                        f"(external: {external_price}, factor: {adjustment_factor})")
+                    
+                    center_price = adjusted_price
+        
         self.logger.info(f"Using center price: {center_price} {self.quote_symbol}")
             
         # Generate price levels for buy and sell orders
@@ -347,9 +371,16 @@ class OrderBookMakerStrategy(BaseStrategy):
                 self.logger.warning("Cannot check for outdated orders: No market price available")
                 return 0, 0
             
-            # Set threshold percentage (orders beyond this % from market price are considered outdated)
-            # This should be slightly larger than our max spread to allow for normal spread orders
-            price_threshold = self.max_spread_percentage * Decimal('1.5')
+            # Get configurable threshold from parameters, with fallback to default
+            # This determines how far from market price an order can be before it's cancelled
+            configured_threshold = self.parameters.get('price_deviation_threshold')
+            if configured_threshold is not None:
+                price_threshold = Decimal(str(configured_threshold))
+                self.logger.debug(f"Using configured price deviation threshold: {float(price_threshold)*100:.2f}%")
+            else:
+                # Default threshold is 1.5x the max spread
+                price_threshold = self.max_spread_percentage * Decimal('1.5')
+                self.logger.debug(f"Using default price deviation threshold: {float(price_threshold)*100:.2f}%")
             
             # Log threshold
             self.logger.info(f"Checking for orders more than {float(price_threshold)*100:.2f}% away from current price {market_price}")
@@ -362,7 +393,7 @@ class OrderBookMakerStrategy(BaseStrategy):
             
             # Track our counts
             total_orders = 0
-            outdated_orders = 0
+            outdated_orders_list = []
             
             # Check bids (buy orders)
             for bid in order_book["bids"]:
@@ -372,19 +403,15 @@ class OrderBookMakerStrategy(BaseStrategy):
                     # Calculate how far this order is from market price (percentage)
                     price_deviation = abs(bid_price - market_price) / market_price
                     
-                    # If it's too far, cancel it
+                    # If it's too far, mark for cancellation
                     if price_deviation > price_threshold:
-                        self.logger.info(f"Cancelling outdated BUY order at {bid_price} ({float(price_deviation)*100:.2f}% from market price)")
-                        try:
-                            self.dex.cancel_order(
-                                account=self.account,
-                                order_id=bid['identifier'],
-                                quote_symbol=self.quote_symbol,
-                                base_symbol=self.base_symbol
-                            )
-                            outdated_orders += 1
-                        except Exception as e:
-                            self.logger.error(f"Error cancelling outdated buy order: {e}")
+                        self.logger.info(f"Marking outdated BUY order at {bid_price} ({float(price_deviation)*100:.2f}% from market price)")
+                        outdated_orders_list.append({
+                            "type": "bid",
+                            "price": bid_price,
+                            "identifier": bid["identifier"],
+                            "deviation": price_deviation
+                        })
             
             # Check offers (sell orders)
             for offer in order_book["offers"]:
@@ -394,27 +421,74 @@ class OrderBookMakerStrategy(BaseStrategy):
                     # Calculate how far this order is from market price (percentage)
                     price_deviation = abs(offer_price - market_price) / market_price
                     
-                    # If it's too far, cancel it
+                    # If it's too far, mark for cancellation
                     if price_deviation > price_threshold:
-                        self.logger.info(f"Cancelling outdated SELL order at {offer_price} ({float(price_deviation)*100:.2f}% from market price)")
-                        try:
-                            self.dex.cancel_order(
-                                account=self.account,
-                                order_id=offer['identifier'],
-                                quote_symbol=self.quote_symbol,
-                                base_symbol=self.base_symbol
-                            )
-                            outdated_orders += 1
-                        except Exception as e:
-                            self.logger.error(f"Error cancelling outdated sell order: {e}")
+                        self.logger.info(f"Marking outdated SELL order at {offer_price} ({float(price_deviation)*100:.2f}% from market price)")
+                        outdated_orders_list.append({
+                            "type": "offer",
+                            "price": offer_price,
+                            "identifier": offer["identifier"],
+                            "deviation": price_deviation
+                        })
+            
+            # If no outdated orders, return early
+            if not outdated_orders_list:
+                self.logger.info(f"No outdated orders found among {total_orders} total orders")
+                return total_orders, 0
+                
+            # Sort by deviation to cancel the most outdated orders first
+            outdated_orders_list.sort(key=lambda x: x["deviation"], reverse=True)
+            
+            # Get batch parameters
+            batch_size = int(self.parameters.get('cancellation_batch_size', 10))
+            delay_ms = int(self.parameters.get('cancellation_delay_ms', 200))
+            
+            # Log summary before cancellation
+            self.logger.info(f"Found {len(outdated_orders_list)} outdated orders to cancel out of {total_orders} total orders")
+            
+            # Cancel in batches with delay
+            cancelled_orders = 0
+            failed_orders = 0
+            
+            # Process in batches with delay between batches
+            for i in range(0, len(outdated_orders_list), batch_size):
+                batch = outdated_orders_list[i:i+batch_size]
+                
+                # Log batch progress
+                batch_num = (i // batch_size) + 1
+                total_batches = (len(outdated_orders_list) + batch_size - 1) // batch_size
+                self.logger.info(f"Processing outdated order cancellation batch {batch_num}/{total_batches} ({len(batch)} orders)")
+                
+                # Process each order in the batch
+                for order in batch:
+                    try:
+                        result = self.dex.cancel_order(
+                            account=self.account,
+                            order_id=order["identifier"],
+                            quote_symbol=self.quote_symbol,
+                            base_symbol=self.base_symbol
+                        )
+                        
+                        if result.get("success", False):
+                            cancelled_orders += 1
+                            self.logger.debug(f"Cancelled outdated {order['type']} order {order['identifier']} at price {order['price']}")
+                        else:
+                            failed_orders += 1
+                            error = result.get("error", "Unknown error")
+                            self.logger.warning(f"Failed to cancel outdated {order['type']} order {order['identifier']}: {error}")
+                    except Exception as e:
+                        failed_orders += 1
+                        self.logger.error(f"Error cancelling outdated {order['type']} order {order['identifier']}: {e}")
+                
+                # Add delay between batches to avoid rate limiting
+                if i + batch_size < len(outdated_orders_list) and delay_ms > 0:
+                    self.logger.debug(f"Waiting {delay_ms}ms before next cancellation batch")
+                    time.sleep(delay_ms / 1000)
             
             # Log summary
-            if outdated_orders > 0:
-                self.logger.info(f"Cancelled {outdated_orders} outdated orders out of {total_orders} total orders")
-            else:
-                self.logger.info(f"No outdated orders found among {total_orders} total orders")
+            self.logger.info(f"Cancelled {cancelled_orders} outdated orders, {failed_orders} failed")
             
-            return total_orders, outdated_orders
+            return total_orders, cancelled_orders
         
         except Exception as e:
             self.logger.error(f"Error checking for outdated orders: {e}")
@@ -595,86 +669,38 @@ class OrderBookMakerStrategy(BaseStrategy):
             "buy_orders": adjusted_buy_orders
         }
 
-    def on_price_update(self, new_price):
-        """Handle price updates from the MarketPriceTrackerStrategy."""
-        try:
-            if new_price is None:
-                self.logger.warning("Received None price update, ignoring")
-                return
+    def on_price_update(self, new_price: Decimal) -> None:
+        """Handle price updates from other strategies."""
+        old_price = self._market_price
+        
+        # Store the coordinator's market price for reference
+        self.coordinator_market_price = new_price
+        
+        # Update our internal price
+        self._market_price = new_price
+        
+        # Calculate price change percentage
+        if old_price is not None and old_price > Decimal('0'):
+            price_change_pct = abs(new_price - old_price) / old_price
+            self.logger.info(f"Price updated from {old_price} to {new_price} {self.quote_symbol} (change: {float(price_change_pct)*100:.2f}%)")
             
-            # Convert to Decimal if needed
-            if not isinstance(new_price, Decimal):
-                new_price = Decimal(str(new_price))
+            # If price change is significant, run the strategy to update orders
+            # The significance threshold can be adjusted based on market volatility
+            significance_threshold = Decimal('0.001')  # 0.1% default
             
-            # Check if the price is reasonable (validation)
-            if new_price <= 0:
-                self.logger.warning(f"Ignoring invalid price update: {new_price}")
-                return
-                
-            # Check if the price change is significant
-            current_price = self.get_market_price()
-            if current_price is None or current_price == Decimal('0'):
-                self.logger.info(f"Setting initial center price to {new_price}")
+            # Allow strategy config to override the threshold
+            configured_threshold = self.parameters.get('price_update_significance_threshold')
+            if configured_threshold is not None:
+                significance_threshold = Decimal(str(configured_threshold))
+            
+            if price_change_pct > significance_threshold:
+                self.logger.info(f"Price change of {float(price_change_pct)*100:.2f}% exceeds threshold of {float(significance_threshold)*100:.2f}% - updating orders")
+                # Only check and cancel outdated orders, don't cancel all
+                self.run(cancel_existing=False)
             else:
-                # Calculate price change percentage
-                price_change_percentage = abs(new_price - current_price) / current_price
-                change_pct = float(price_change_percentage) * 100
-                
-                # Only log at INFO level for significant changes
-                if change_pct >= 0.5:  # 0.5% threshold for INFO logging
-                    self.logger.info(f"Price update: {current_price} -> {new_price} ({change_pct:.2f}%)")
-                else:
-                    self.logger.debug(f"Minor price update: {current_price} -> {new_price} ({change_pct:.2f}%)")
-                
-                # Skip if change is too dramatic (safety check)
-                if change_pct > 20.0:  # 20% threshold
-                    self.logger.warning(f"⚠️ Dramatic price change detected ({change_pct:.2f}%), validating before applying")
-                    
-                    # Additional validation could be added here
-                    confirm_dramatic_change = self.parameters.get('confirm_dramatic_change', False)
-                    if not confirm_dramatic_change:
-                        self.logger.warning(f"Ignoring dramatic price change. Set 'confirm_dramatic_change: true' to allow.")
-                        return
-                    
-                    self.logger.warning(f"Proceeding with dramatic price change as configured")
-            
-            # Store the new price
-            self._market_price = new_price
-            
-            # Regenerate orders if needed based on config
-            if self.parameters.get('auto_update_on_price_change', True):
-                self.logger.debug("Regenerating orders due to price change")
-                
-                # Determine cancel behavior based on config
-                cancel_existing = self.parameters.get('cancel_existing_on_price_change', False)
-                
-                if cancel_existing:
-                    # Cancel all existing orders
-                    self.logger.info("Cancelling all existing orders due to price change")
-                    self.cancel_orders()
-                else:
-                    # Only cancel outdated orders
-                    self.logger.debug("Checking for outdated orders due to price change")
-                    total_orders, cancelled_orders = self.check_and_cancel_outdated_orders()
-                    
-                    # Only log at INFO level if we actually cancelled orders
-                    if cancelled_orders > 0:
-                        self.logger.info(f"Price update: Cancelled {cancelled_orders} outdated orders out of {total_orders} active orders")
-                
-                # Generate new signal with updated price
-                signal = self.generate_signal()
-                
-                # Check balances and adjust orders
-                base_balance, quote_balance = self.check_balances()
-                adjusted_signal = self.adjust_orders_for_balance(signal, base_balance, quote_balance)
-                
-                # Place new orders
-                self.place_orders(adjusted_signal)
-        except Exception as e:
-            self.logger.error(f"Error handling price update: {e}")
-            import traceback
-            self.logger.error(f"Traceback: {traceback.format_exc()}")
-            # Continue running despite error
+                self.logger.debug(f"Price change of {float(price_change_pct)*100:.2f}% below threshold - no immediate order update needed")
+        else:
+            self.logger.info(f"Initial price set to {new_price} {self.quote_symbol}")
 
     def _place_single_order(self, order_type, quantity, price, index=0):
         """Place a single order with formatted parameters."""
@@ -728,3 +754,91 @@ class OrderBookMakerStrategy(BaseStrategy):
         except Exception as e:
             self.logger.error(f"Error placing {order_type} order {index}: {e}")
             return False 
+
+    def cancel_orders(self):
+        """Cancel all existing orders for the trading pair"""
+        try:
+            self.logger.info(f"Cancelling all {self.base_symbol}/{self.quote_symbol} orders for {self.account}")
+            
+            # Get the current orderbook
+            order_book = self.dex.fetch_order_book(
+                quote_symbol=self.quote_symbol,
+                base_symbol=self.base_symbol
+            )
+            
+            # Create a list of all orders that need to be cancelled
+            orders_to_cancel = []
+            
+            # Add bids (buy orders)
+            for bid in order_book["bids"]:
+                if bid["account"] == self.account:
+                    orders_to_cancel.append({
+                        "type": "bid",
+                        "price": bid["price"],
+                        "identifier": bid["identifier"]
+                    })
+            
+            # Add offers (sell orders)
+            for offer in order_book["offers"]:
+                if offer["account"] == self.account:
+                    orders_to_cancel.append({
+                        "type": "offer",
+                        "price": offer["price"],
+                        "identifier": offer["identifier"]
+                    })
+            
+            total_orders = len(orders_to_cancel)
+            cancelled_orders = 0
+            failed_orders = 0
+            
+            if total_orders == 0:
+                self.logger.info("No orders found to cancel")
+                return
+            
+            self.logger.info(f"Found {total_orders} orders to cancel")
+            
+            # Get batch size and delay from parameters or use defaults
+            batch_size = int(self.parameters.get('cancellation_batch_size', 10))
+            delay_ms = int(self.parameters.get('cancellation_delay_ms', 200))
+            
+            # Process in batches with delay between batches
+            for i in range(0, len(orders_to_cancel), batch_size):
+                batch = orders_to_cancel[i:i+batch_size]
+                
+                # Log batch progress
+                batch_num = (i // batch_size) + 1
+                total_batches = (total_orders + batch_size - 1) // batch_size
+                self.logger.info(f"Processing cancellation batch {batch_num}/{total_batches} ({len(batch)} orders)")
+                
+                # Process each order in the batch
+                for order in batch:
+                    try:
+                        result = self.dex.cancel_order(
+                            account=self.account,
+                            order_id=order["identifier"],
+                            quote_symbol=self.quote_symbol,
+                            base_symbol=self.base_symbol
+                        )
+                        
+                        if result.get("success", False):
+                            cancelled_orders += 1
+                            self.logger.debug(f"Cancelled {order['type']} order {order['identifier']} at price {order['price']}")
+                        else:
+                            failed_orders += 1
+                            error = result.get("error", "Unknown error")
+                            self.logger.warning(f"Failed to cancel {order['type']} order {order['identifier']}: {error}")
+                    except Exception as e:
+                        failed_orders += 1
+                        self.logger.error(f"Error cancelling {order['type']} order {order['identifier']}: {e}")
+                
+                # Add delay between batches to avoid rate limiting
+                if i + batch_size < len(orders_to_cancel) and delay_ms > 0:
+                    self.logger.debug(f"Waiting {delay_ms}ms before next cancellation batch")
+                    time.sleep(delay_ms / 1000)
+            
+            self.logger.info(f"Cancelled {cancelled_orders} orders, {failed_orders} failed")
+            
+        except Exception as e:
+            self.logger.error(f"Error in cancel_orders: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc()) 

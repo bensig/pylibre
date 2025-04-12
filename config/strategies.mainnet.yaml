@@ -8,30 +8,39 @@ trading_pairs:
   BTCUSDT:
     market_maker:
       enabled: true
-      num_orders: 30  # 15 per side
-      min_spread_percentage: 0.01
-      max_spread_percentage: 0.15
+      num_orders: 20  # Reduced from 40 to 20 (10 per side)
+      min_spread_percentage: 0.005  # Reduced from 0.01 to 0.5%
+      max_spread_percentage: 0.03   # Reduced from 0.15 to 3%
       quantity_distribution: "random"
-      update_interval_ms: 60000  # 1 minute
+      update_interval_ms: 60000  # Increased from 30s to 60s to reduce order creation frequency
+      price_deviation_threshold: 0.005  # Cancel orders if more than 0.5% away from market price
+      price_update_significance_threshold: 0.0005  # 0.05% price change will trigger order updates
+      center_adjustment_factor: 0.5  # Force recenter closer to the current market price
+      cancellation_batch_size: 3  # Reduced from 5 to 3 orders at once
+      cancellation_delay_ms: 500  # Wait 500ms between batches of cancellations
+      max_orders_per_update: 5  # NEW: Limit new order creation to 5 per update
+      min_order_spacing_percentage: 0.002  # NEW: Minimum 0.2% spacing between orders
+      order_creation_throttle_ms: 500  # NEW: Minimum delay between order creation
     
     animator:
       enabled: true
-      activity_level: "medium"  # low, medium, high
-      orders_per_cycle: 3  # number of orders to update each cycle
-      cycle_interval_ms: 5000  # 5 seconds
-      max_active_orders: 20  # maximum number of active orders allowed
-      max_orders_per_side: 10  # maximum orders per side (buy/sell)
-      cleanup_frequency: 10  # clean up excess orders every 10 cycles
+      activity_level: "low"  # Reduced from medium to low
+      orders_per_cycle: 1  # Reduced from 2 to 1
+      cycle_interval_ms: 20000  # Increased from 10000 to 20000 (20 seconds)
+      max_active_orders: 10  # Reduced from 15 to 10
+      max_orders_per_side: 5  # Reduced from 8 to 5
+      cleanup_frequency: 10  # Reduced from 20 to 10
+      use_existing_price_levels: true  # NEW: Prefer existing price levels to avoid duplicate orders
     
     price_tracker:
       enabled: true
       price_source: "binance"  # Use Binance as the price source
-      update_interval_ms: 60000  # 1 minute - increased from 30 seconds
-      price_change_threshold: 0.005  # 0.5%
-      fallback_price: 84273.28  # Current BTC price as of check
+      update_interval_ms: 30000  # 30 seconds - decreased from 60 seconds
+      price_change_threshold: 0.002  # 0.2% - lowered from 0.5%
+      fallback_price: 83702.22  # Update to current BTC price
       
     simulator:
-      enabled: true
+      enabled: false  # Disabled simulator to reduce order complexity
       trade_frequency: "medium"  # low, medium, high
       trade_size_variation: "medium"  # low, medium, high
       price_range_percentage: 0.005  # 0.5%
@@ -42,20 +51,24 @@ trading_pairs:
   LIBREBTC:
     market_maker:
       enabled: true
-      num_orders: 30
+      num_orders: 20  # Reduced from 30 to 20
       min_spread_percentage: 0.01
       max_spread_percentage: 0.15
       quantity_distribution: "random"
-      update_interval_ms: 120000  # 2 minutes
+      update_interval_ms: 180000  # Increased from 2 minutes to 3 minutes
+      max_orders_per_update: 5  # NEW: Limit new order creation to 5 per update
+      min_order_spacing_percentage: 0.002  # NEW: Minimum 0.2% spacing between orders
+      order_creation_throttle_ms: 500  # NEW: Minimum delay between order creation
     
     animator:
       enabled: true
-      activity_level: "high"
-      orders_per_cycle: 5
-      cycle_interval_ms: 3000  # 3 seconds
-      max_active_orders: 20  # maximum number of active orders allowed
-      max_orders_per_side: 10  # maximum orders per side (buy/sell)
-      cleanup_frequency: 10  # clean up excess orders every 10 cycles
+      activity_level: "medium"  # Reduced from high to medium
+      orders_per_cycle: 3  # Reduced from 5 to 3
+      cycle_interval_ms: 5000  # Increased from 3000 to 5000 (5 seconds)
+      max_active_orders: 15  # Reduced from 20 to 15
+      max_orders_per_side: 8  # Reduced from 10 to 8
+      cleanup_frequency: 5  # Reduced from 10 to 5
+      use_existing_price_levels: true  # NEW: Prefer existing price levels to avoid duplicate orders
     
     price_tracker:
       enabled: true
@@ -65,7 +78,7 @@ trading_pairs:
       fallback_price: 0.0000000084  # Default price for LIBRE/BTC
       
     simulator:
-      enabled: true
+      enabled: false  # Disabled simulator to reduce order complexity
       trade_frequency: "high"  # low, medium, high
       trade_size_variation: "high"  # low, medium, high
       price_range_percentage: 0.01  # 1%
@@ -75,6 +88,17 @@ trading_pairs:
       trend_direction: "up"  # up, down, neutral
       trend_strength: 0.7  # 0.0 to 1.0
 
+# Strategy groups (consolidated parameters for monitoring)
+strategy_groups:
+  BTCUSDT:
+    num_orders: 100  # Maximum total orders for BTCUSDT
+    order_creation_rate_limit: 10  # Maximum new orders per minute
+    max_order_age_hours: 12  # Cancel orders older than 12 hours
+  LIBREBTC:
+    num_orders: 50  # Maximum total orders for LIBREBTC
+    order_creation_rate_limit: 10  # Maximum new orders per minute
+    max_order_age_hours: 24  # Cancel orders older than 24 hours
+
 # Default strategy parameters
 strategies:
   OrderBookMakerStrategy:
@@ -82,6 +106,9 @@ strategies:
     min_spread_percentage: 0.01
     max_spread_percentage: 0.05
     quantity_distribution: "random"
+    max_orders_per_update: 5  # NEW: Limit new order creation rate
+    cancellation_batch_size: 3  # NEW: Smaller batches for cancellation
+    cancellation_delay_ms: 500  # NEW: Delay between cancellation batches
     
   MarketPriceTrackerStrategy:
     # Default parameters for MarketPriceTrackerStrategy
@@ -91,19 +118,20 @@ strategies:
     
   OrderBookAnimatorStrategy:
     # Default parameters for OrderBookAnimatorStrategy
-    activity_level: "medium"
-    orders_per_cycle: 3
-    cycle_interval_ms: 5000
-    max_active_orders: 20  # maximum number of active orders allowed
-    max_orders_per_side: 10  # maximum orders per side (buy/sell)
+    activity_level: "low"  # Changed from medium to low
+    orders_per_cycle: 2  # Reduced from 3 to 2
+    cycle_interval_ms: 10000  # Increased from 5000 to 10000 (10 seconds)
+    max_active_orders: 15  # Reduced from 20 to 15
+    max_orders_per_side: 8  # Reduced from 10 to 8
     cleanup_frequency: 10  # clean up excess orders every 10 cycles
+    use_existing_price_levels: true  # NEW: Prefer existing price levels
     
   TradeSimulatorStrategy:
     # Default parameters for TradeSimulatorStrategy
-    trade_frequency: "medium"
+    trade_frequency: "low"  # Changed from medium to low
     trade_size_variation: "medium"
     price_range_percentage: 0.01
-    cycle_interval_ms: 30000
+    cycle_interval_ms: 60000  # Increased from 30000 to 60000 (60 seconds)
     trades_per_cycle: 1
     trade_pattern: "random"
     trend_direction: "neutral"

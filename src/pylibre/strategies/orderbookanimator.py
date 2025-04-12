@@ -171,7 +171,7 @@ class OrderBookAnimatorStrategy(BaseStrategy):
             # Run periodic cleanup if needed
             orders_cleaned = 0
             if self.cycle_count % self.cleanup_frequency == 0:
-                orders_cleaned = self._clean_excess_orders()
+                orders_cleaned = self.clean_up_excess_orders()
                 if orders_cleaned > 0:
                     self.logger.info(f"Cleaned up {orders_cleaned} excess orders")
                     
@@ -257,53 +257,105 @@ class OrderBookAnimatorStrategy(BaseStrategy):
             self.logger.error(f"Error animating orderbook: {e}")
             return 0
             
-    def _clean_excess_orders(self):
-        """Cancel oldest orders when we exceed our maximum limits."""
+    def clean_up_excess_orders(self):
+        """Clean up excess orders if we have too many active orders"""
         try:
-            # Calculate how many orders to cancel for each side
-            buy_excess = max(0, len(self.active_orders['buy']) - self.max_orders_per_side)
-            sell_excess = max(0, len(self.active_orders['sell']) - self.max_orders_per_side)
+            # Skip cleanup if it's not time yet
+            if self.cycle_count % self.cleanup_frequency != 0:
+                return
             
-            if buy_excess + sell_excess == 0:
-                return 0  # No excess orders
+            # Get the current orderbook
+            order_book = self.dex.fetch_order_book(
+                quote_symbol=self.quote_symbol,
+                base_symbol=self.base_symbol
+            )
+            
+            # Count our orders and identify excess ones
+            buy_orders = []
+            sell_orders = []
+            total_orders = 0
+            
+            # Process bids (buy orders)
+            for bid in order_book["bids"]:
+                if bid["account"] == self.account:
+                    total_orders += 1
+                    buy_orders.append({
+                        "type": "bid",
+                        "identifier": bid["identifier"],
+                        "price": Decimal(str(bid["price"]))
+                    })
+            
+            # Process offers (sell orders)
+            for offer in order_book["offers"]:
+                if offer["account"] == self.account:
+                    total_orders += 1
+                    sell_orders.append({
+                        "type": "offer",
+                        "identifier": offer["identifier"],
+                        "price": Decimal(str(offer["price"]))
+                    })
+            
+            # Sort orders by price (ascending for buy, descending for sell)
+            buy_orders.sort(key=lambda x: x["price"])
+            sell_orders.sort(key=lambda x: x["price"], reverse=True)
+            
+            # Identify excess orders
+            excess_buy_orders = buy_orders[self.max_orders_per_side:] if len(buy_orders) > self.max_orders_per_side else []
+            excess_sell_orders = sell_orders[self.max_orders_per_side:] if len(sell_orders) > self.max_orders_per_side else []
+            
+            excess_orders = excess_buy_orders + excess_sell_orders
+            
+            if not excess_orders:
+                self.logger.debug(f"No excess orders to clean up. Current counts: {len(buy_orders)} buy, {len(sell_orders)} sell")
+                return
+            
+            self.logger.info(f"Found {len(excess_orders)} excess orders to clean up ({len(excess_buy_orders)} buy, {len(excess_sell_orders)} sell)")
+            
+            # Get batch parameters
+            batch_size = int(self.parameters.get('cancellation_batch_size', 5))
+            delay_ms = int(self.parameters.get('cancellation_delay_ms', 500))
+            
+            # Cancel excess orders in batches
+            cancelled_orders = 0
+            
+            # Process in batches with delay between batches
+            for i in range(0, len(excess_orders), batch_size):
+                batch = excess_orders[i:i+batch_size]
                 
-            self.logger.info(f"Found excess orders: {buy_excess} buy, {sell_excess} sell")
-            
-            # Sort orders by age (oldest first)
-            # Assuming older orders have lower identifier values - modify if this isn't true
-            buy_orders = sorted(self.active_orders['buy'], key=lambda x: x['identifier'])
-            sell_orders = sorted(self.active_orders['sell'], key=lambda x: x['identifier'])
-            
-            # Select oldest orders to cancel
-            orders_to_cancel = []
-            if buy_excess > 0:
-                orders_to_cancel.extend(buy_orders[:buy_excess])
-            if sell_excess > 0:
-                orders_to_cancel.extend(sell_orders[:sell_excess])
+                # Log batch progress
+                batch_num = (i // batch_size) + 1
+                total_batches = (len(excess_orders) + batch_size - 1) // batch_size
+                self.logger.debug(f"Processing excess order cleanup batch {batch_num}/{total_batches} ({len(batch)} orders)")
                 
-            # Cancel the orders
-            cancelled_count = 0
-            for order in orders_to_cancel:
-                try:
-                    cancel_result = self.dex.cancel_order(
-                        account=self.account,
-                        order_id=order['identifier'],
-                        quote_symbol=self.quote_symbol,
-                        base_symbol=self.base_symbol
-                    )
-                    
-                    if cancel_result:
-                        self.logger.info(f"Cleaned up excess {order.get('order_type')} order at price {order.get('price')}")
-                        cancelled_count += 1
+                # Process each order in the batch
+                for order in batch:
+                    try:
+                        # Cancel the order
+                        result = self.dex.cancel_order(
+                            account=self.account,
+                            order_id=order["identifier"],
+                            quote_symbol=self.quote_symbol,
+                            base_symbol=self.base_symbol
+                        )
                         
-                except Exception as e:
-                    self.logger.error(f"Error cancelling excess order {order.get('identifier')}: {e}")
-                    
-            return cancelled_count
+                        if result.get("success", False):
+                            cancelled_orders += 1
+                            self.logger.info(f"Cleaned up excess {order['type']} order at price {order['price']}")
+                        else:
+                            error = result.get("error", "Unknown error")
+                            self.logger.warning(f"Failed to clean up {order['type']} order: {error}")
+                            
+                    except Exception as e:
+                        self.logger.error(f"Error cleaning up {order['type']} order: {e}")
+                
+                # Add delay between batches
+                if i + batch_size < len(excess_orders) and delay_ms > 0:
+                    time.sleep(delay_ms / 1000)
+            
+            self.logger.info(f"Cleaned up {cancelled_orders} excess orders")
             
         except Exception as e:
-            self.logger.error(f"Error cleaning up excess orders: {e}")
-            return 0
+            self.logger.error(f"Error in clean_up_excess_orders: {e}")
 
     def _create_replacement_order(self, order: Dict[str, Any]) -> bool:
         """Create a replacement order with slight variation."""

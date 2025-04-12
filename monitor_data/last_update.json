@@ -12,12 +12,12 @@
   "OrderBookAnimatorStrategy_bentester_LIBRE_BTC": "2025-03-20T19:12:19.125782",
   "TradeSimulatorStrategy_bentester_LIBRE_BTC": "2025-03-13T23:50:45.740190",
   "MarketPriceTrackerStrategy_jecashking_LIBRE_BTC": "2025-03-20T19:18:29.712004",
-  "OrderBookMakerStrategy_arb24_BTC_USDT": "2025-03-20T19:21:13.850304",
-  "OrderBookMakerStrategy_jecashking_LIBRE_BTC": "2025-03-20T19:20:28.428070",
-  "OrderBookAnimatorStrategy_jecashking_LIBRE_BTC": "2025-03-20T19:20:28.428080",
+  "OrderBookMakerStrategy_arb24_BTC_USDT": "2025-04-12T16:48:45.060352",
+  "OrderBookMakerStrategy_jecashking_LIBRE_BTC": "2025-03-20T23:59:32.027143",
+  "OrderBookAnimatorStrategy_jecashking_LIBRE_BTC": "2025-03-20T23:59:32.027155",
   "MarketPriceTrackerStrategy_dextrader_BTC_USDT": "2025-03-19T23:17:26.413018",
   "OrderBookMakerStrategy_dextrader_BTC_USDT": "2025-03-19T23:17:26.413027",
   "OrderBookAnimatorStrategy_dextrader_BTC_USDT": "2025-03-19T23:17:26.413032",
-  "MarketPriceTrackerStrategy_arb24_BTC_USDT": "2025-03-20T19:20:52.455397",
-  "OrderBookAnimatorStrategy_arb24_BTC_USDT": "2025-03-20T19:21:27.934868"
+  "MarketPriceTrackerStrategy_arb24_BTC_USDT": "2025-04-12T16:48:44.079975",
+  "OrderBookAnimatorStrategy_arb24_BTC_USDT": "2025-04-12T16:48:12.374319"
 }
