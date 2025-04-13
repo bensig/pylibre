@@ -29,6 +29,7 @@ def main():
     
     # Optional arguments
     parser.add_argument('--api-url', default='https://testnet.libre.org', help='API endpoint URL')
+    parser.add_argument('--network', default='mainnet', choices=['mainnet', 'testnet'], help='Network to use (mainnet or testnet)')
     
     args = parser.parse_args()
     
@@ -71,27 +72,92 @@ def main():
     print(f"🔍 Using trading pair: {base_symbol}/{quote_symbol}")
     
     # Initialize client
-    client = LibreClient(api_url=args.api_url, verbose=True)
+    print(f"🔍 Connecting to {args.api_url} ({args.network}) using config from config/config.yaml")
+    client = LibreClient(
+        api_url=args.api_url, 
+        verbose=True,
+        network=args.network,
+        config_path='config/config.yaml'
+    )
+    
+    # Verify account has a private key
+    if not client.has_account_key(args.account):
+        print(f"❌ ERROR: No private key found for account {args.account} in the configuration.")
+        print(f"   Please ensure {args.account} is configured in config/config.yaml with a private key.")
+        sys.exit(1)
+    
     dex = DexClient(client)
     
     # Cancel all orders
     print(f"🔍 Cancelling all orders for {args.account} on {base_symbol}/{quote_symbol}...")
     
-    # Cancel orders
-    result = dex.cancel_all_orders(
-        account=args.account,
-        quote_symbol=quote_symbol,
-        base_symbol=base_symbol
-    )
+    # Fetch order book first to see what orders exist
+    print("📊 Fetching order book...")
+    order_book = dex.fetch_order_book(quote_symbol=quote_symbol, base_symbol=base_symbol)
+    
+    # Count user's orders
+    user_bids = [bid for bid in order_book.get("bids", []) if bid.get("account") == args.account]
+    user_asks = [ask for ask in order_book.get("offers", []) if ask.get("account") == args.account]
+    print(f"📈 Found {len(user_bids)} bids and {len(user_asks)} asks for {args.account}")
+    
+    if not user_bids and not user_asks:
+        print("✅ No orders to cancel!")
+        sys.exit(0)
+    
+    # Set client and DexClient to verbose for detailed logs
+    client.verbose = True
+    
+    # Cancel orders with timeout
+    import threading
+    import time
+    
+    result = None
+    cancel_thread = None
+    
+    def cancel_with_timeout():
+        global result
+        result = dex.cancel_all_orders(
+            account=args.account,
+            quote_symbol=quote_symbol,
+            base_symbol=base_symbol
+        )
+    
+    # Start cancellation in a thread
+    cancel_thread = threading.Thread(target=cancel_with_timeout)
+    cancel_thread.daemon = True
+    cancel_thread.start()
+    
+    # Wait with a progress indicator
+    timeout = 60  # 60 seconds timeout
+    start_time = time.time()
+    while cancel_thread.is_alive() and time.time() - start_time < timeout:
+        print("⏳ Cancelling orders... (press Ctrl+C to stop)", end="\r")
+        time.sleep(1)
+    
+    print("")  # New line after progress indicator
+    
+    if cancel_thread.is_alive():
+        print("⚠️ Cancellation taking too long! You may need to check the blockchain explorer")
+        sys.exit(1)
     
     # Print result
-    if result.get('success'):
+    if result and result.get('success'):
         print(f"📊 Final Summary:")
         print(f"✅ Total successfully cancelled: {result.get('successful', 0)}")
         if result.get('failed', 0) > 0:
             print(f"❌ Total failed to cancel: {result.get('failed', 0)}")
+            
+            # Print details of failed cancellations
+            print("\nFailed cancellations:")
+            for detail in result.get('details', []):
+                if not detail.get('success'):
+                    order_id = detail.get('order_id')
+                    order_type = detail.get('type')
+                    error = detail.get('error', 'Unknown error')
+                    print(f"  - Order {order_id} ({order_type}): {error}")
     else:
-        print(f"❌ Failed to cancel orders: {result.get('error', 'Unknown error')}")
+        error_msg = result.get('error', 'Unknown error') if result else "Cancellation failed or timed out"
+        print(f"❌ Failed to cancel orders: {error_msg}")
 
 if __name__ == "__main__":
     main() 

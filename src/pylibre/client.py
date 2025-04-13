@@ -90,6 +90,17 @@ class LibreClient:
                 print(f"Error loading config: {str(e)}")
             raise
 
+    def has_account_key(self, account):
+        """Check if a private key exists for the specified account.
+        
+        Args:
+            account (str): The account to check
+            
+        Returns:
+            bool: True if a private key exists, False otherwise
+        """
+        return account in self.private_keys
+
     def format_response(self, success, data=None, error=None):
         """Standardize response format across all methods"""
         response = {"success": success}

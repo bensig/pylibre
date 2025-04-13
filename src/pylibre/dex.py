@@ -345,8 +345,11 @@ class DexClient:
 
     def cancel_order(self, account: str, order_id: int, quote_symbol: str, base_symbol: str) -> dict:
         """Cancel an order."""
+        logger = logging.getLogger("pylibre.DexClient")
         try:
             pair = f"{base_symbol.lower()}{quote_symbol.lower()}"
+            
+            logger.debug(f"Cancelling order {order_id} for pair {pair} by account {account}")
             
             result = self.client.execute_action(
                 contract=self.contract,
@@ -358,19 +361,44 @@ class DexClient:
                 actor=account
             )
             
+            # Add detailed debug logging
+            logger.debug(f"Cancel order response: {result}")
+            
             # Check the nested response structure
             if isinstance(result, dict):
                 if result.get("success") and result.get("data", {}).get("transaction_id"):
                     return {"success": True, "tx_id": result["data"]["transaction_id"]}
                 elif result.get("data", {}).get("transaction_id") is None:
-                    return {"success": False, "error": "Transaction rejected"}
+                    # Extract more detailed error information if available
+                    detailed_error = "Transaction rejected"
+                    
+                    # Look for error details in various possible locations
+                    error_dict = result.get("error", {})
+                    if isinstance(error_dict, dict):
+                        if "details" in error_dict:
+                            details = error_dict.get("details", [])
+                            if details and isinstance(details, list) and len(details) > 0:
+                                detail_msgs = [d.get("message", "") for d in details if "message" in d]
+                                if detail_msgs:
+                                    detailed_error = " | ".join(detail_msgs)
+                        elif "what" in error_dict:
+                            detailed_error = error_dict.get("what", detailed_error)
+                    elif isinstance(error_dict, str) and error_dict:
+                        detailed_error = error_dict
+                    
+                    return {"success": False, "error": detailed_error}
                 else:
                     error = result.get("error", "Unknown error")
-                    return {"success": False, "error": error}
+                    if isinstance(error, dict):
+                        error_msg = error.get("what", str(error))
+                    else:
+                        error_msg = str(error)
+                    return {"success": False, "error": error_msg}
             
             return {"success": False, "error": f"Invalid response type: {type(result)}"}
             
         except Exception as e:
+            logger.error(f"Exception in cancel_order: {str(e)}")
             return {"success": False, "error": str(e)}
 
     def cancel_all_orders(self, account, quote_symbol, base_symbol, contract="dex.libre"):

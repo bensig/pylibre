@@ -214,9 +214,9 @@
     "parameters": {
       "cancel_existing": true
     },
-    "status": "running",
+    "status": "stopped",
     "start_time": "2025-04-12T16:43:11.781999",
-    "last_active": "2025-04-12T16:43:14.574576"
+    "last_active": "2025-04-13T00:34:33.780797"
   },
   "OrderBookMakerStrategy_jecashking_LIBRE_BTC": {
     "id": "OrderBookMakerStrategy_jecashking_LIBRE_BTC",
@@ -307,9 +307,9 @@
       "price_change_threshold": 0.002,
       "fallback_price": 83702.22
     },
-    "status": "running",
+    "status": "stopped",
     "start_time": "2025-04-12T16:43:11.778778",
-    "last_active": "2025-04-12T16:43:14.073997"
+    "last_active": "2025-04-13T00:34:47.327219"
   },
   "OrderBookAnimatorStrategy_arb24_BTC_USDT": {
     "id": "OrderBookAnimatorStrategy_arb24_BTC_USDT",

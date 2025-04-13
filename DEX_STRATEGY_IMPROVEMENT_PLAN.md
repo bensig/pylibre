@@ -165,6 +165,7 @@
 - [x] Implement smaller batch sizes for transaction processing (3 orders per batch)
 - [x] Increase delay between transaction batches to reduce rejections
 - [x] Optimize the fast cancellation method to handle large order counts reliably
+- [x] Create dedicated oracle-aligned orderbook manager script to maintain exactly 15 bids and 15 asks
 
 ### Phase 1.5: Order Creation Prevention
 - [x] Disable unnecessary simulator strategy components
@@ -175,14 +176,14 @@
 - [x] Further reduce animator activity levels
 - [x] Consolidate configuration in strategy_groups section
 - [x] Add order age limits to automatically cancel old orders
-- [ ] Implement intelligent price level selection to reuse existing levels
-- [ ] Add order placement validation to reject orders too close to existing ones
+- [x] Implement intelligent price level selection to reuse existing levels
+- [x] Add order placement validation to reject orders too close to existing ones
 - [ ] Implement global rate limiting across all strategies
 
 ### Phase 2: Monitoring Enhancements
-- [ ] Extend monitor script with detailed analytics reporting
+- [x] Extend monitor script with detailed analytics reporting
 - [ ] Create a simple dashboard for real-time system status
-- [ ] Implement more aggressive cleanup for orders far from market price
+- [x] Implement more aggressive cleanup for orders far from market price
 - [ ] Add automated email/chat notifications for large price deviations
 - [ ] Create a history log of strategy performance for trend analysis
 - [ ] Add blockchain congestion detection and adaptive retry logic
@@ -194,7 +195,7 @@
 ### Phase 3: Strategy Coordination
 - [ ] Integrate monitoring functionality into the strategy coordinator
 - [ ] Implement periodic health checks within the coordinator
-- [ ] Add automatic rebalancing of order book based on market conditions
+- [x] Add automatic rebalancing of order book based on market conditions
 - [ ] Develop priority-based strategy execution framework
 - [ ] Create comprehensive error recovery system with fallbacks
 - [ ] Extend StrategyCoordinator with configurable health checks
@@ -234,14 +235,16 @@
 | 2025-04-12 | Prevent excess order creation                    | Completed   | Updated config with rate limiting and spacing |
 | 2025-04-12 | Configure strategy_groups for monitoring         | Completed   | Added consolidated parameters           |
 | 2025-04-12 | Implement order age limits                       | Completed   | Orders older than configured hours are auto-cancelled |
+| 2025-04-13 | Create oracle-aligned orderbook manager          | Completed   | New script that maintains exactly 15 bids and 15 asks |
+|            | Create price animator for UI activity            | In Progress | Implementing small price movements for UI |
 |            | Standardize on pylibre API methods               | In Progress | Converting direct API calls to library calls |
 
 ## Next Steps
 
-1. Implement the order age limits and placement validation in the monitor script
+1. Create a complementary animator script that works alongside the oracle-aligned orderbook manager
 2. Create a basic dashboard for real-time system status monitoring
-3. Add automatic rebalancing of the order book based on market conditions
-4. Integrate monitoring functionality directly into the strategy coordinator
+3. Add automatic notifications for large price deviations
+4. Integrate the monitoring functionality directly into the strategy coordinator
 5. Begin the redesign of the core strategy framework
 
 ## Success Metrics
