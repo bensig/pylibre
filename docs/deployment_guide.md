@@ -249,6 +249,113 @@ pip install -r requirements.txt
 sudo systemctl start libre-strategy-coordinator.service
 ```
 
+## Standalone Orderbook Services
+
+In addition to the coordinator-based strategies, there are two standalone services for specialized orderbook management:
+
+### Order Animator
+
+The Order Animator creates visual activity by periodically canceling and replacing orders:
+- Prioritizes highest bid/lowest ask to influence mid-market price
+- Runs every 5 seconds with 2-8 orders per cycle
+- Focuses on market appearance and liquidity
+
+### Oracle Aligned Orderbook
+
+The Oracle Aligned Orderbook maintains precise price alignment:
+- Maintains exactly 15 bids and 15 offers aligned with Chainlink oracle prices
+- Ensures DEX mid-price stays close to oracle price
+- Implements sophisticated order management with batch processing
+- Critical for price accuracy and arbitrage prevention
+
+### Running Standalone Services
+
+#### Method 1: Screen Sessions (Development/Testing)
+
+For quick testing or development, you can run services in screen sessions:
+
+```bash
+# Start services in screen sessions
+./scripts/manage_orderbook_services.sh --screen start
+
+# Check status
+./scripts/manage_orderbook_services.sh --screen status
+
+# Stop services
+./scripts/manage_orderbook_services.sh --screen stop
+
+# Or run manually
+screen -S animator python scripts/order_animator.py
+screen -S oracle-aligned python scripts/oracle_aligned_orderbook.py
+
+# List all screens
+screen -ls
+
+# Attach to a screen
+screen -r animator
+```
+
+#### Method 2: Systemd Services (Production)
+
+For production deployment, use systemd services:
+
+```bash
+# Install systemd services
+sudo ./scripts/install_services.sh --install-order-animator --install-oracle-aligned
+
+# Start services
+sudo systemctl start libre-order-animator.service
+sudo systemctl start libre-oracle-aligned-orderbook.service
+
+# Enable auto-start on boot
+sudo systemctl enable libre-order-animator.service
+sudo systemctl enable libre-oracle-aligned-orderbook.service
+
+# Check status
+sudo systemctl status libre-order-animator.service
+sudo systemctl status libre-oracle-aligned-orderbook.service
+
+# View logs
+sudo journalctl -u libre-order-animator.service -f
+sudo journalctl -u libre-oracle-aligned-orderbook.service -f
+```
+
+### Monitoring Integration
+
+Enhanced monitored versions of these scripts integrate with the PyLibre monitoring system:
+- `order_animator_monitored.py` - Tracks cycles, orders animated, and uptime
+- `oracle_aligned_orderbook_monitored.py` - Monitors orders placed/cancelled and oracle price tracking
+
+These monitored versions update the same monitoring files used by the dashboard, allowing you to view their status alongside other strategies.
+
+### Complete System Setup
+
+To run everything together:
+
+```bash
+# 1. Start the monitoring dashboard
+screen -S dashboard python scripts/run_dashboard.py --port 5100
+# Or as a service
+sudo systemctl start libre-dashboard.service
+
+# 2. Start the strategy coordinator
+screen -S coordinator python scripts/run_strategy_coordinator.py
+# Or as a service
+sudo systemctl start libre-strategy-coordinator.service
+
+# 3. Start standalone orderbook services (monitored versions recommended)
+./scripts/manage_orderbook_services.sh --screen start
+
+# 4. Access the dashboard at http://localhost:5100
+```
+
+The dashboard will automatically display monitoring data from:
+- Coordinator-managed strategies
+- Standalone orderbook services (if using monitored versions)
+- Any other strategies writing to the `monitor_data/` directory
+
+This provides a single web interface to monitor all your trading strategies and orderbook management services.
+
 ## Troubleshooting
 
 ### Common Issues
