@@ -1,0 +1,27 @@
+[Unit]
+Description=Libre Oracle Aligned Orderbook Service
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=libre
+Group=libre
+WorkingDirectory=/opt/libre/pylibre
+ExecStart=/opt/libre/pylibre/.venv/bin/python scripts/oracle_aligned_orderbook_monitored.py
+Restart=on-failure
+RestartSec=10
+# Environment variables from config
+EnvironmentFile=-/etc/libre/env
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+
+# Security settings
+ProtectSystem=full
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

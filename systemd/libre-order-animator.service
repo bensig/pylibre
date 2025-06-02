@@ -1,0 +1,30 @@
+[Unit]
+Description=Libre Order Animator Service
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=libre
+Group=libre
+WorkingDirectory=/opt/libre/pylibre
+ExecStart=/opt/libre/pylibre/.venv/bin/python scripts/order_animator_monitored.py --interval ${INTERVAL} --min-orders ${MIN_ORDERS} --max-orders ${MAX_ORDERS}
+Restart=on-failure
+RestartSec=10
+Environment="INTERVAL=5"
+Environment="MIN_ORDERS=2"
+Environment="MAX_ORDERS=8"
+# Environment variables from config
+EnvironmentFile=-/etc/libre/env
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+
+# Security settings
+ProtectSystem=full
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
